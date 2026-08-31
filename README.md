@@ -1,5 +1,9 @@
 # decky-nvidia-update
 
+![GitHub Downloads](https://img.shields.io/github/downloads/moi952/decky-nvidia-update/total)
+![Downloads latest](https://img.shields.io/github/downloads/moi952/decky-nvidia-update/latest/total)
+![Stars](https://img.shields.io/github/stars/moi952/decky-nvidia-update)
+
 A [Decky Loader](https://decky.xyz/) plugin that installs or changes the NVIDIA driver
 version directly on a running SteamOS system — no USB stick, no repair image, no OS
 reinstall, no reboot until you're actually ready for one.
