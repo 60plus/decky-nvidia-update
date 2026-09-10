@@ -13,6 +13,8 @@
     "tag_nfb": "NFB",
     "tag_beta": "Beta",
     "arch_testing_label": "beta",
+    "custom_build_needs_build_tag": "A compilar",
+    "custom_build_will_build_notice": "Esta versión no está empaquetada por Arch — se compilará primero y luego se instalará.",
     "release_notes_button": "Notas de la versión",
     "install_button": "Instalar driver\n{{version}}",
     "install_button_running": "Actualización en curso…",
@@ -47,12 +49,24 @@
     "rootfs_warning_body": "Partición raíz: ~{{size}} (mínimo recomendado: 8 GiB). La instalación podría fallar por falta de espacio. Agranda rootfs-A/B con steamos-nvidia-installer si es necesario.",
     "rootfs_warning_install_anyway": "Instalar de todos modos",
     "rootfs_warning_cancel": "Cancelar",
+    "custom_build_section_label": "Builds compilados",
+    "custom_build_description": "Versiones ya compiladas, listas para instalar. Una vez instalada una versión, puedes borrar su build aquí sin riesgo — el driver activo ya no depende de él.",
+    "custom_build_running": "Compilando…",
+    "custom_build_checking": "Comprobando…",
+    "custom_build_not_buildable": "Esta versión no se puede compilar — el empaquetado actual de Arch espera un archivo que esta versión de NVIDIA no incluye.",
+    "custom_build_tag": "Compilado",
+    "custom_build_failed": "Compilación fallida: {{error}}",
+    "custom_build_none_cached": "Aún no hay builds personalizados en caché.",
+    "custom_build_delete_confirm": "¿Eliminar el build en caché de {{version}}?",
+    "custom_build_delete_confirm_button": "Eliminar",
+    "action_cancel": "Cancelar",
     "show_builds_label": "Builds exactos (-N)",
     "show_builds_desc": "Muestra cada número de build en vez de solo el más reciente por versión.",
     "channel_filter_label": "Filtrar por canal de driver NVIDIA",
     "channel_recommended": "Recomendado",
     "channel_nfb": "New Feature Branch (NFB)",
     "channel_beta": "Beta",
+    "channel_tocompile": "A compilar",
     "channel_all": "Todos los canales",
     "default_channel_label": "Canal de actualización"
   },
@@ -64,7 +78,8 @@
     "v0_3_0": {
       "title": "Novedades de la 0.3.0",
       "items": [
-        "Nueva página de Ajustes: actualización del plugin, reportar un error, solicitar una función, apoyar el desarrollo"
+        "Nueva página de Ajustes: actualización del plugin, reportar un error, solicitar una función, apoyar el desarrollo",
+        "Compila una versión del driver que Arch nunca empaquetó, directamente desde los repositorios de empaquetado de Arch — ver la nueva sección debajo del selector de versión"
       ]
     }
   }

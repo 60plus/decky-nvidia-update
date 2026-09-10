@@ -11,11 +11,10 @@ import {
   PanelSectionRow,
   ButtonItem,
   ToggleField,
-  DropdownItem,
   showModal,
   staticClasses,
 } from "@decky/ui";
-import { ActionButton } from "@moi952/decky-ui-kit";
+import { ActionButton, AnchoredDropdown } from "@moi952/decky-ui-kit";
 import {
   PluginUpdateProvider,
   usePluginUpdate,
@@ -33,7 +32,7 @@ import type { PluginUpdateInfo } from "@moi952/decky-plugin-toolkit";
 import { useTranslation } from "react-i18next";
 import i18n from "i18next";
 import { loadTranslations } from "./i18n";
-import { VersionDropdown } from "./VersionDropdown";
+import { VersionDropdown, compareDriverVersions } from "./VersionDropdown";
 import type {
   NvidiaVersionMap,
   ChannelFilters,
@@ -42,6 +41,8 @@ import type {
 import { ReleaseNotesModal } from "./ReleaseNotesModal";
 import { SeparatedBlock } from "./SeparatedBlock";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { CustomBuildSection } from "./CustomBuildSection";
+import type { CustomBuild } from "./CustomBuildSection";
 import { SettingsView } from "./views/SettingsView";
 import { openRootfsSpaceWarningModal } from "./RootfsSpaceWarningModal";
 import { SELF_PLUGIN_ID } from "./utils/otherPlugins";
@@ -83,6 +84,40 @@ const IDLE_STATUS: UpdateStatus = {
   error: null,
   error_code: null,
   driver_spec: null,
+};
+
+// Mirrors bin/steamos-nvidia-build.sh's own state shape (see
+// custom_build.py's DEFAULT_BUILD_STATE) — a separate, smaller status than
+// UpdateStatus above since the build script has no error_code/driver_spec
+// concept of its own.
+type BuildStatus = {
+  running: boolean;
+  step: number;
+  total_steps: number;
+  message: string;
+  log: string[];
+  done: boolean;
+  success: boolean | null;
+  error: string | null;
+  version: string | null;
+};
+
+const IDLE_BUILD_STATUS: BuildStatus = {
+  running: false,
+  step: 0,
+  total_steps: 8,
+  message: "",
+  log: [],
+  done: false,
+  success: null,
+  error: null,
+  version: null,
+};
+
+type CheckResult = {
+  checked_ok: boolean;
+  buildable: boolean;
+  missing_files: string[];
 };
 
 // The bash script's own step() text is English-only (plain bash has no
@@ -133,14 +168,19 @@ const IDLE_NVIDIA_VERSIONS: NvidiaVersionMap = {};
 // pkgver-pkgrel detailed list so the result stays comparable to
 // currentVersion/repoInfo.stable (a rebuild-only pkgrel bump must still
 // count as an update). "all", or a channel with nothing currently
-// classified into it, falls back to the plain Arch-stable pick.
+// classified into it, falls back to the plain Arch-stable pick. "tocompile"
+// means "the single newest version NVIDIA has ever published, built or
+// not" — buildableVersions (see list_buildable_versions) is already every
+// NVIDIA release, newest first, so its own head answers that directly.
 function computeChannelLatest(
   channel: DefaultChannelChoice,
   detailedVersions: string[],
   nvidiaVersions: NvidiaVersionMap,
   archStable: string,
+  buildableVersions: string[] = [],
 ): string {
   if (channel === "all") return archStable;
+  if (channel === "tocompile") return buildableVersions[0] ?? archStable;
   const match = detailedVersions.find(
     (v) => nvidiaVersions[v.replace(/-\d+$/, "")]?.category === channel,
   );
@@ -179,6 +219,30 @@ function Content() {
     () => cachedNvidiaVersions ?? IDLE_NVIDIA_VERSIONS,
   );
   const [showChannelFilters, setShowChannelFilters] = useState<boolean>(true);
+  // Collapsed by default — managing already-cached custom builds is an
+  // occasional action, not something to surface expanded on every open the
+  // way the version picker itself is.
+  const [showCustomBuild, setShowCustomBuild] = useState<boolean>(false);
+  const [customBuilds, setCustomBuilds] = useState<CustomBuild[]>([]);
+  const refreshCustomBuilds = () =>
+    call<[], CustomBuild[]>("list_custom_builds").then(setCustomBuilds);
+  // Every NVIDIA-published version (>= 590), newest first — merged straight
+  // into VersionDropdown's own list so picking one Arch hasn't packaged and
+  // hitting Install builds it first, automatically, instead of needing a
+  // separate build step.
+  const [buildableVersions, setBuildableVersions] = useState<string[]>([]);
+  const [buildStatus, setBuildStatus] =
+    useState<BuildStatus>(IDLE_BUILD_STATUS);
+  // Set right before a build is kicked off ahead of an install, cleared once
+  // consumed (or the build fails) — lets the done/success effect below tell
+  // "a build I'm meant to chain into an install just finished" apart from
+  // any other build completion, and pins WHICH version to install next
+  // rather than trusting chosenVersion to not have changed meanwhile.
+  const [pendingInstallAfterBuild, setPendingInstallAfterBuild] = useState<
+    string | null
+  >(null);
+  const [checkResult, setCheckResult] = useState<CheckResult | null>(null);
+  const [checkingBuildable, setCheckingBuildable] = useState(false);
   const [view, setView] = useState<"main" | "settings">("main");
   const { info: pluginUpdateInfo } = usePluginUpdate();
   const [rootfsSpaceInfo, setRootfsSpaceInfo] =
@@ -187,7 +251,13 @@ function Content() {
   // category hides just the versions classified into it (an unclassified
   // Arch version is never hidden, whatever the filter state).
   const [channelFilters, setChannelFiltersState] = useState<ChannelFilters>(
-    () => cachedChannelFilters ?? { recommended: true, nfb: true, beta: true },
+    () =>
+      cachedChannelFilters ?? {
+        recommended: true,
+        nfb: true,
+        beta: true,
+        tocompile: true,
+      },
   );
   const setChannelFilters = (
     update: ChannelFilters | ((f: ChannelFilters) => ChannelFilters),
@@ -231,6 +301,8 @@ function Content() {
       setShowChannelFilters(s.channel_filters_expanded);
     });
     call<[], RootfsSpaceInfo>("get_rootfs_space_info").then(setRootfsSpaceInfo);
+    refreshCustomBuilds();
+    call<[], string[]>("list_buildable_versions").then(setBuildableVersions);
   }, []);
   // `selected` is never loaded from persisted settings: opening the plugin
   // should default to whatever is newest right now, not silently re-offer
@@ -277,6 +349,7 @@ function Content() {
     detailedVersions,
     nvidiaVersions,
     repoInfo.stable,
+    buildableVersions,
   );
 
   // Adaptive: notes for whatever is currently selected if NVIDIA classifies
@@ -355,12 +428,19 @@ function Content() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.done, status.success]);
 
-  // Exact string compare (pkgver-pkgrel, e.g. "610.43.03-3") — not just the
-  // pkgver, so a rebuild-only bump (-3 → -5) still counts as "update available".
+  // Numeric compare (pkgver-pkgrel, e.g. "610.43.03-3") — not just a
+  // rebuild-only pkgrel bump (-3 → -5) still counts as "update available",
+  // but also: a custom-built version numerically AHEAD of anything Arch
+  // currently ships (e.g. installed 615.71.09, Arch's newest is 610.57.04)
+  // counts as up to date, not "update available" — only an Arch-provided
+  // version genuinely newer than what's installed should prompt one, since
+  // version numbers are incremental and Arch will never "catch down".
   const hasCurrentAndLatest = currentVersion !== "" && latestVersion !== "";
-  const isUpToDate = hasCurrentAndLatest && currentVersion === latestVersion;
-  const updateAvailable =
-    hasCurrentAndLatest && currentVersion !== latestVersion;
+  const versionCmp = hasCurrentAndLatest
+    ? compareDriverVersions(currentVersion, latestVersion)
+    : 0;
+  const isUpToDate = hasCurrentAndLatest && versionCmp >= 0;
+  const updateAvailable = hasCurrentAndLatest && versionCmp < 0;
 
   // Is the currently-selected dropdown entry the same build as what's
   // already installed? A detailed pick ("610.43.03-5") compares exactly; a
@@ -374,11 +454,62 @@ function Content() {
       ? chosenVersion === currentVersion
       : chosenVersion === currentVersion.replace(/-\d+$/, ""));
 
-  const startUpdate = async () => {
+  // A version needs building first when it isn't already sitting in the
+  // custom-build cache AND Arch doesn't provide it either — i.e. it's only
+  // present because buildableVersions (every NVIDIA release, see
+  // list_buildable_versions) offered it. Bare-version comparisons
+  // throughout since customBuilds/buildableVersions never carry a pkgrel
+  // suffix, same reasoning as VersionDropdown's own currentVersion matching.
+  const chosenVersionBare = chosenVersion.replace(/-\d+$/, "");
+  const needsBuild =
+    chosenVersion !== "" &&
+    !customBuilds.some((b) => b.version === chosenVersionBare) &&
+    !effectiveVersions.includes(chosenVersionBare) &&
+    !detailedVersions.some((v) => v.replace(/-\d+$/, "") === chosenVersionBare);
+
+  // Pre-flight check whenever the selection lands on a to-build version —
+  // greys out Install with a clear reason instead of letting the user sit
+  // through a build that's doomed to fail partway through (see
+  // check_buildable's own docstring on the backend for why this can't be
+  // fully free, only far cheaper than an actual build attempt).
+  useEffect(() => {
+    if (!needsBuild) {
+      setCheckResult(null);
+      return;
+    }
+    let cancelled = false;
+    setCheckingBuildable(true);
+    setCheckResult(null);
+    call<[string], CheckResult>("check_buildable", chosenVersionBare)
+      .then((r) => {
+        if (!cancelled) setCheckResult(r);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingBuildable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsBuild, chosenVersionBare]);
+
+  // Only a confirmed answer blocks Install — a failed/inconclusive check
+  // (checked_ok: false, e.g. a network hiccup) means "unknown", not "known
+  // bad", so the option stays available rather than being blocked on a guess.
+  const knownNotBuildable =
+    checkResult?.checked_ok === true && !checkResult.buildable;
+
+  useEffect(() => {
+    const listener = (data: BuildStatus) => setBuildStatus(data);
+    addEventListener("nvidia_build_progress", listener);
+    return () => removeEventListener("nvidia_build_progress", listener);
+  }, []);
+
+  const startUpdate = async (specOverride?: string) => {
     // chosenVersion is always already a concrete version (VersionDropdown
     // never reports "latest" as a sentinel, and resolves the testing branch
     // itself when the beta toggle wants it) — nothing special here.
-    const spec = chosenVersion;
+    const spec = specOverride ?? chosenVersion;
     // Optimistic update: don't wait for the first streamed line from the
     // script to show "running" — otherwise there's a window (can be tens
     // of seconds) right after clicking where the UI still shows whatever
@@ -410,16 +541,53 @@ function Content() {
   // real install copy. Warn upfront instead, but still let the user proceed
   // (e.g. a driver small enough to fit, or the heuristic being wrong for
   // their setup) — this is advisory, not a hard block.
-  const onStart = () => {
+  const onStart = (specOverride?: string) => {
     if (rootfsSpaceInfo?.undersized) {
       openRootfsSpaceWarningModal(
         rootfsSpaceInfo.total_mb,
-        () => void startUpdate(),
+        () => void startUpdate(specOverride),
       );
       return;
     }
-    void startUpdate();
+    void startUpdate(specOverride);
   };
+
+  // Selecting a version Arch never packaged and hitting Install builds it
+  // first (steamos-nvidia-build.sh), THEN chains straight into the normal
+  // install flow above once that succeeds — one click, not two separate
+  // actions in two different places.
+  const onStartBuildThenInstall = async () => {
+    const v = chosenVersionBare;
+    setPendingInstallAfterBuild(v);
+    setBuildStatus({
+      ...IDLE_BUILD_STATUS,
+      running: true,
+      version: v,
+      message: "Starting…",
+    });
+    await call<[string], boolean>("start_custom_build", v);
+  };
+
+  // Fires once per build run, mirroring the install-side effect above.
+  useEffect(() => {
+    if (!buildStatus.done) return;
+    if (
+      buildStatus.success &&
+      pendingInstallAfterBuild !== null &&
+      buildStatus.version === pendingInstallAfterBuild
+    ) {
+      setPendingInstallAfterBuild(null);
+      refreshCustomBuilds();
+      onStart(buildStatus.version);
+    } else if (!buildStatus.success) {
+      setPendingInstallAfterBuild(null);
+      toaster.toast({
+        title: t("toast_failed_title"),
+        body: buildStatus.error || t("failed_default_error"),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildStatus.done, buildStatus.success]);
 
   const onReboot = async () => {
     await call<[], boolean>("reboot_system");
@@ -427,6 +595,9 @@ function Content() {
 
   const progressPct = status.total_steps
     ? Math.round((status.step / status.total_steps) * 100)
+    : 0;
+  const buildProgressPct = buildStatus.total_steps
+    ? Math.round((buildStatus.step / buildStatus.total_steps) * 100)
     : 0;
 
   const goToSettings = () => setView("settings");
@@ -560,10 +731,32 @@ function Content() {
               beta: t("tag_beta"),
             }}
             archTestingLabel={t("arch_testing_label")}
-            disabled={status.running}
+            customBuildVersions={customBuilds.map((b) => b.version)}
+            customBuildLabel={t("custom_build_tag")}
+            buildableVersions={buildableVersions}
+            needsBuildLabel={t("custom_build_needs_build_tag")}
+            currentVersion={currentVersion}
+            disabled={status.running || buildStatus.running}
             onSelectionChange={setChosenVersion}
           />
         </PanelSectionRow>
+
+        {needsBuild &&
+          !status.running &&
+          !buildStatus.running &&
+          !checkingBuildable && (
+            <PanelSectionRow>
+              {knownNotBuildable ? (
+                <div style={{ fontSize: 11, color: "#ff6b6b" }}>
+                  {t("custom_build_not_buildable")}
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: "#ffcf5c" }}>
+                  {t("custom_build_will_build_notice")}
+                </div>
+              )}
+            </PanelSectionRow>
+          )}
 
         <PanelSectionRow>
           <ButtonItem
@@ -578,13 +771,25 @@ function Content() {
         <PanelSectionRow>
           <ButtonItem
             layout="below"
-            onClick={onStart}
-            disabled={status.running || loadingVersions || selectedIsInstalled}
+            onClick={() =>
+              needsBuild ? void onStartBuildThenInstall() : onStart()
+            }
+            disabled={
+              status.running ||
+              buildStatus.running ||
+              loadingVersions ||
+              selectedIsInstalled ||
+              (needsBuild && (checkingBuildable || knownNotBuildable))
+            }
           >
-            {status.running ? (
+            {buildStatus.running ? (
+              t("custom_build_running")
+            ) : status.running ? (
               t("install_button_running")
             ) : selectedIsInstalled ? (
               t("install_button_installed")
+            ) : checkingBuildable ? (
+              t("custom_build_checking")
             ) : (
               <div style={{ whiteSpace: "pre-line" }}>
                 {t("install_button", { version: chosenVersion })}
@@ -593,7 +798,7 @@ function Content() {
           </ButtonItem>
         </PanelSectionRow>
 
-        {status.running && (
+        {(status.running || buildStatus.running) && (
           <PanelSectionRow>
             <SeparatedBlock bottomBorder={false}>
               <div
@@ -605,15 +810,16 @@ function Content() {
                   textOverflow: "ellipsis",
                 }}
               >
-                {t("step_label", {
-                  step: status.step,
-                  total: status.total_steps,
-                })}
-                {status.step >= 1 && status.step <= STEP_DESCRIPTION_KEYS.length
-                  ? ` — ${t(STEP_DESCRIPTION_KEYS[status.step - 1], { version: status.driver_spec })}`
-                  : status.message
-                    ? ` — ${status.message}`
-                    : ""}
+                {buildStatus.running
+                  ? `${t("step_label", { step: buildStatus.step, total: buildStatus.total_steps })}${buildStatus.message ? ` — ${buildStatus.message}` : ""}`
+                  : `${t("step_label", { step: status.step, total: status.total_steps })}${
+                      status.step >= 1 &&
+                      status.step <= STEP_DESCRIPTION_KEYS.length
+                        ? ` — ${t(STEP_DESCRIPTION_KEYS[status.step - 1], { version: status.driver_spec })}`
+                        : status.message
+                          ? ` — ${status.message}`
+                          : ""
+                    }`}
               </div>
               <div
                 style={{
@@ -626,10 +832,20 @@ function Content() {
               >
                 <div
                   style={{
-                    width: status.step === 0 ? "100%" : `${progressPct}%`,
+                    width: buildStatus.running
+                      ? buildStatus.step === 0
+                        ? "100%"
+                        : `${buildProgressPct}%`
+                      : status.step === 0
+                        ? "100%"
+                        : `${progressPct}%`,
                     height: "100%",
                     background: "#66c0f4",
-                    opacity: status.step === 0 ? 0.4 : 1,
+                    opacity:
+                      (buildStatus.running ? buildStatus.step : status.step) ===
+                      0
+                        ? 0.4
+                        : 1,
                     transition: "width 0.3s ease",
                   }}
                 />
@@ -755,6 +971,16 @@ function Content() {
         )}
 
         <PanelSectionRow>
+          <CustomBuildSection
+            builds={customBuilds}
+            onBuildsChange={refreshCustomBuilds}
+            expanded={showCustomBuild}
+            onToggle={() => setShowCustomBuild((v) => !v)}
+            disabled={status.running || buildStatus.running}
+          />
+        </PanelSectionRow>
+
+        <PanelSectionRow>
           <ToggleField
             label={t("show_builds_label")}
             description={t("show_builds_desc")}
@@ -772,24 +998,20 @@ function Content() {
         </PanelSectionRow>
 
         <PanelSectionRow>
-          <div style={{ fontSize: 14, marginTop: 12, marginBottom: 4 }}>
-            {t("default_channel_label")}
-          </div>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <DropdownItem
-            rgOptions={[
-              { data: "recommended", label: t("channel_recommended") },
-              { data: "nfb", label: t("channel_nfb") },
-              { data: "beta", label: t("channel_beta") },
-              { data: "all", label: t("channel_all") },
+          <AnchoredDropdown
+            label={t("default_channel_label")}
+            options={[
+              { value: "recommended", label: t("channel_recommended") },
+              { value: "nfb", label: t("channel_nfb") },
+              { value: "beta", label: t("channel_beta") },
+              { value: "tocompile", label: t("channel_tocompile") },
+              { value: "all", label: t("channel_all") },
             ]}
-            selectedOption={defaultChannel}
-            {...({ childrenContainerWidth: "max" } as any)}
-            onChange={(o: any) => {
-              const value = o?.data as DefaultChannelChoice;
-              setDefaultChannel(value);
-              persistSettings({ default_channel: value });
+            selectedValue={defaultChannel}
+            onChange={(value) => {
+              const v = value as DefaultChannelChoice;
+              setDefaultChannel(v);
+              persistSettings({ default_channel: v });
             }}
           />
         </PanelSectionRow>
@@ -831,6 +1053,15 @@ function Content() {
                 }
               />
             </PanelSectionRow>
+            <PanelSectionRow>
+              <ToggleField
+                label={t("channel_tocompile")}
+                checked={channelFilters.tocompile}
+                onChange={(v: boolean) =>
+                  setChannelFilters((f) => ({ ...f, tocompile: v }))
+                }
+              />
+            </PanelSectionRow>
           </CollapsibleSection>
         </PanelSectionRow>
       </PanelSection>
@@ -868,21 +1099,23 @@ export default definePlugin(() => {
   // someone who's never touched the channel setting onto a testing build.
   (async () => {
     try {
-      const [current, repo, detailed, nvidiaVersions, settings] =
+      const [current, repo, detailed, nvidiaVersions, settings, buildable] =
         await Promise.all([
           call<[], string>("get_current_version"),
           call<[], RepoInfo>("get_driver_repo_info"),
           call<[], string[]>("list_driver_versions_detailed"),
           call<[], NvidiaVersionMap>("get_nvidia_branch_info"),
           call<[], Settings>("get_settings"),
+          call<[], string[]>("list_buildable_versions"),
         ]);
       const latest = computeChannelLatest(
         settings.default_channel,
         detailed,
         nvidiaVersions,
         repo.stable,
+        buildable,
       );
-      if (current && latest && current !== latest) {
+      if (current && latest && compareDriverVersions(current, latest) < 0) {
         toaster.toast({
           title: i18n.t("toast_update_available_title"),
           body: `${current} → ${latest}`,

@@ -85,6 +85,11 @@ done
 
 ARCHIVE_URL=https://archive.archlinux.org/packages
 
+# Populated by steamos-nvidia-build.sh for versions Arch never packaged (so
+# the archive above has nothing to pin) — pin_pkg() checks here first, before
+# any network lookup, for a matching package at the requested spec.
+CUSTOM_BUILD_DIR="/home/.steamos-nvidia-custom-builds"
+
 # ------------------------------------------------------------- version list
 # No root/preflight needed just to browse versions — only curl matters here.
 list_versions() {
@@ -225,6 +230,26 @@ PIN_VER=""
 
 pin_pkg() {
   local pkg="$1" spec="$2" repo ver file url attempt
+
+  # A steamos-nvidia-build.sh cache hit is just a different SOURCE for the
+  # same pinned files — everything downstream (glibc check, overlay install,
+  # stale-file cleanup) doesn't need to know or care where a package came
+  # from.
+  if [[ "$spec" != latest && -d "$CUSTOM_BUILD_DIR/$spec" ]]; then
+    file="$(ls "$CUSTOM_BUILD_DIR/$spec/${pkg}"-*-x86_64.pkg.tar.zst 2>/dev/null | sort -V | tail -1)"
+    if [[ -n "$file" ]]; then
+      ver="$(basename "$file")"; ver="${ver#"$pkg"-}"; ver="${ver%-x86_64.pkg.tar.zst}"
+      url="file://$file"
+      PKG_URLS+="${PKG_URLS:+ }$url"
+      PKG_URL_ARR+=("$url")
+      PKG_FILES+=("$(basename "$file")")
+      PKG_NAMES+=("$pkg")
+      PIN_VER="$ver"
+      log "  $pkg $ver (custom build)"
+      return
+    fi
+  fi
+
   if [[ "$spec" == latest ]]; then
     # archlinux.org occasionally answers a plain 502 for a moment (seen in
     # practice) — fetch to a variable and retry a few times first, so a
@@ -294,6 +319,12 @@ p=r[0]; print(p["pkgver"]+"-"+str(p["pkgrel"]), p["filename"], p["repo"])' 2>/de
 # (packages here run ~280-300 MB; a silent multi-minute curl looks frozen).
 fetch_one() {
   local url="$1" dest="$2" total have pct pid rc
+  # A custom build (see pin_pkg()) is already sitting on local disk — copy
+  # instead of curl, no network/progress display needed.
+  if [[ "$url" == file://* ]]; then
+    cp "${url#file://}" "$dest"
+    return $?
+  fi
   # Purely cosmetic (falls back to a plain MB counter below if empty) —
   # `|| true` so a network hiccup on this HEAD request can't take down the
   # whole run under `set -e`/`pipefail` over what's just a progress display.

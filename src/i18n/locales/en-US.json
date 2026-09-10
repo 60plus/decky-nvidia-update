@@ -13,6 +13,8 @@
     "tag_nfb": "NFB",
     "tag_beta": "Beta",
     "arch_testing_label": "beta",
+    "custom_build_needs_build_tag": "Needs build",
+    "custom_build_will_build_notice": "This version isn't packaged by Arch — it'll be built first, then installed.",
     "release_notes_button": "Release notes",
     "install_button": "Install driver\n{{version}}",
     "install_button_running": "Update running…",
@@ -47,12 +49,24 @@
     "rootfs_warning_body": "Root partition: ~{{size}} (recommended minimum: 8GiB). The install may fail from lack of space. Grow rootfs-A/B with steamos-nvidia-installer if needed.",
     "rootfs_warning_install_anyway": "Install anyway",
     "rootfs_warning_cancel": "Cancel",
+    "custom_build_section_label": "Compiled builds",
+    "custom_build_description": "Already-built versions, ready to install. Once a version is installed, its build here is safe to delete — the active driver no longer depends on it.",
+    "custom_build_running": "Building…",
+    "custom_build_checking": "Checking…",
+    "custom_build_not_buildable": "This version can't be built — Arch's current packaging expects a file this NVIDIA release doesn't include.",
+    "custom_build_tag": "Compiled",
+    "custom_build_failed": "Build failed: {{error}}",
+    "custom_build_none_cached": "No custom builds cached yet.",
+    "custom_build_delete_confirm": "Delete the cached build for {{version}}?",
+    "custom_build_delete_confirm_button": "Delete",
+    "action_cancel": "Cancel",
     "show_builds_label": "Show exact builds (-N)",
     "show_builds_desc": "Show every build number instead of just the newest per version.",
     "channel_filter_label": "Filter by NVIDIA driver channel",
     "channel_recommended": "Recommended",
     "channel_nfb": "New Feature Branch (NFB)",
     "channel_beta": "Beta",
+    "channel_tocompile": "Needs build",
     "channel_all": "All channels",
     "default_channel_label": "Update channel"
   },
@@ -64,7 +78,8 @@
     "v0_3_0": {
       "title": "What's new in 0.3.0",
       "items": [
-        "New Settings page: plugin self-update, bug report, feature request, support the development"
+        "New Settings page: plugin self-update, bug report, feature request, support the development",
+        "Build a driver version Arch never packaged, straight from Arch's own packaging repos — see the new section under the version picker"
       ]
     }
   }
