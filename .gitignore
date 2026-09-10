@@ -17,6 +17,11 @@ out/
 # Zips produced by package.sh
 packages/
 
+# Vendored by package.sh's pip install step — a build artifact, not
+# something to commit (same reasoning as node_modules).
+py_modules/decky_plugin_toolkit/
+py_modules/decky_plugin_toolkit-*.dist-info/
+
 # Claude Code project context — not for the repo
 CLAUDE.md
 .claude/

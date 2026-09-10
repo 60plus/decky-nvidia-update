@@ -1,0 +1,8 @@
+{
+  "githubOwner": "moi952",
+  "githubRepo": "decky-nvidia-update",
+  "pluginName": "decky-nvidia-update",
+  "displayName": "NVIDIA Driver Update",
+  "description": "Pick and install an NVIDIA driver version directly on a running SteamOS system — no USB stick, no reinstall.",
+  "author": "moi952"
+}

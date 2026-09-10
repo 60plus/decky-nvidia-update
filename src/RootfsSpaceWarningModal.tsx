@@ -16,7 +16,7 @@ function RootfsSpaceWarningModalContent({
   onConfirm,
   onClose,
 }: RootfsSpaceWarningModalContentProps) {
-  const { t } = useTranslation();
+  const { t } = useTranslation("panel");
   return (
     <ModalRoot>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>

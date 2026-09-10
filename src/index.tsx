@@ -15,6 +15,21 @@ import {
   showModal,
   staticClasses,
 } from "@decky/ui";
+import { ActionButton } from "@moi952/decky-ui-kit";
+import {
+  PluginUpdateProvider,
+  usePluginUpdate,
+  pluginUpdateFocus,
+  OtherPluginsProvider,
+  otherPluginsFocus,
+  WhatsNewProvider,
+  featureRequestFocus,
+  PluginUpdateBanner,
+  WhatsNewBanner,
+  OtherPluginsBanner,
+  getWhatsNewVersions,
+} from "@moi952/decky-plugin-toolkit";
+import type { PluginUpdateInfo } from "@moi952/decky-plugin-toolkit";
 import { useTranslation } from "react-i18next";
 import i18n from "i18next";
 import { loadTranslations } from "./i18n";
@@ -27,9 +42,10 @@ import type {
 import { ReleaseNotesModal } from "./ReleaseNotesModal";
 import { SeparatedBlock } from "./SeparatedBlock";
 import { CollapsibleSection } from "./CollapsibleSection";
-import { PluginUpdateBanner, PluginUpdateSection } from "./PluginUpdate";
-import type { PluginUpdateInfo } from "./PluginUpdate";
+import { SettingsView } from "./views/SettingsView";
 import { openRootfsSpaceWarningModal } from "./RootfsSpaceWarningModal";
+import { SELF_PLUGIN_ID } from "./utils/otherPlugins";
+import { CURRENT_VERSION } from "./utils/githubReleases";
 import { SiNvidia } from "react-icons/si";
 import {
   FaCheckCircle,
@@ -37,6 +53,7 @@ import {
   FaArrowCircleUp,
   FaInfoCircle,
   FaPowerOff,
+  FaCog,
 } from "react-icons/fa";
 
 type UpdateStatus = {
@@ -142,10 +159,11 @@ let cachedNvidiaVersions: NvidiaVersionMap | null = null;
 let cachedChannelFilters: ChannelFilters | null = null;
 
 function Content() {
-  const { t } = useTranslation();
+  const { t } = useTranslation("panel");
   const [currentVersion, setCurrentVersion] = useState<string>("");
   const [repoInfo, setRepoInfo] = useState<RepoInfo>(IDLE_REPO_INFO);
-  const [defaultChannel, setDefaultChannel] = useState<DefaultChannelChoice>("all");
+  const [defaultChannel, setDefaultChannel] =
+    useState<DefaultChannelChoice>("all");
   const [logPath, setLogPath] = useState<string>("");
   const [versions, setVersions] = useState<string[]>([]);
   const [detailedVersions, setDetailedVersions] = useState<string[]>([]);
@@ -161,12 +179,8 @@ function Content() {
     () => cachedNvidiaVersions ?? IDLE_NVIDIA_VERSIONS,
   );
   const [showChannelFilters, setShowChannelFilters] = useState<boolean>(true);
-  const [pluginUpdateInfo, setPluginUpdateInfo] =
-    useState<PluginUpdateInfo | null>(null);
-  const [checkingPluginUpdate, setCheckingPluginUpdate] =
-    useState<boolean>(false);
-  const [pluginUpdateExpanded, setPluginUpdateExpanded] =
-    useState<boolean>(false);
+  const [view, setView] = useState<"main" | "settings">("main");
+  const { info: pluginUpdateInfo } = usePluginUpdate();
   const [rootfsSpaceInfo, setRootfsSpaceInfo] =
     useState<RootfsSpaceInfo | null>(null);
   // All checked by default: every classified version is shown; unchecking a
@@ -204,7 +218,10 @@ function Content() {
     });
     call<[], string[]>("list_driver_versions")
       .then((v) => {
-        console.log(`[nvidia-update] Arch collapsed versions (${v.length}):`, v);
+        console.log(
+          `[nvidia-update] Arch collapsed versions (${v.length}):`,
+          v,
+        );
         setVersions(v);
       })
       .finally(() => setLoadingVersions(false));
@@ -213,9 +230,6 @@ function Content() {
       setDefaultChannel(s.default_channel);
       setShowChannelFilters(s.channel_filters_expanded);
     });
-    call<[boolean], PluginUpdateInfo>("get_plugin_update_info", false).then(
-      setPluginUpdateInfo,
-    );
     call<[], RootfsSpaceInfo>("get_rootfs_space_info").then(setRootfsSpaceInfo);
   }, []);
   // `selected` is never loaded from persisted settings: opening the plugin
@@ -248,7 +262,9 @@ function Content() {
   const effectiveVersions =
     versions.length > 0
       ? versions
-      : Array.from(new Set(detailedVersions.map((v) => v.replace(/-\d+$/, ""))));
+      : Array.from(
+          new Set(detailedVersions.map((v) => v.replace(/-\d+$/, ""))),
+        );
 
   // "Latest" for the up-to-date/update-available check and badge, scoped to
   // the channel the user has chosen as default (recommended/NFB/beta) — not
@@ -272,7 +288,11 @@ function Content() {
       const collapsedChosen = chosenVersion.replace(/-\d+$/, "");
       const direct = nvidiaVersions[collapsedChosen];
       if (direct) {
-        return { version: collapsedChosen, date: direct.date, notes: direct.notes };
+        return {
+          version: collapsedChosen,
+          date: direct.date,
+          notes: direct.notes,
+        };
       }
       const recommendedEntries = Object.entries(nvidiaVersions).filter(
         ([, info]) => info.category === "recommended",
@@ -281,7 +301,11 @@ function Content() {
       const [bestVersion, bestInfo] = recommendedEntries.reduce((a, b) =>
         new Date(a[1].date).getTime() >= new Date(b[1].date).getTime() ? a : b,
       );
-      return { version: bestVersion, date: bestInfo.date, notes: bestInfo.notes };
+      return {
+        version: bestVersion,
+        date: bestInfo.date,
+        notes: bestInfo.notes,
+      };
     })();
 
   const onShowReleaseNotes = () => {
@@ -388,8 +412,9 @@ function Content() {
   // their setup) — this is advisory, not a hard block.
   const onStart = () => {
     if (rootfsSpaceInfo?.undersized) {
-      openRootfsSpaceWarningModal(rootfsSpaceInfo.total_mb, () =>
-        void startUpdate(),
+      openRootfsSpaceWarningModal(
+        rootfsSpaceInfo.total_mb,
+        () => void startUpdate(),
       );
       return;
     }
@@ -400,392 +425,437 @@ function Content() {
     await call<[], boolean>("reboot_system");
   };
 
-  const onCheckPluginUpdate = async () => {
-    setCheckingPluginUpdate(true);
-    try {
-      const info = await call<[boolean], PluginUpdateInfo>(
-        "get_plugin_update_info",
-        true,
-      );
-      setPluginUpdateInfo(info);
-    } finally {
-      setCheckingPluginUpdate(false);
-    }
-  };
-
   const progressPct = status.total_steps
     ? Math.round((status.step / status.total_steps) * 100)
     : 0;
 
+  const goToSettings = () => setView("settings");
+
+  if (view === "settings") {
+    return <SettingsView onBack={() => setView("main")} />;
+  }
+
   return (
-    <PanelSection>
-      <PanelSectionRow>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 8,
-          }}
-        >
-          <SiNvidia size={20} color="#76B900" />
-          <span style={{ fontSize: 16, fontWeight: 700 }}>NVIDIA Driver</span>
-        </div>
-      </PanelSectionRow>
-      <PluginUpdateBanner info={pluginUpdateInfo} />
-      <PanelSectionRow>
-        <div style={{ fontSize: 13 }}>
-          {t("installed", {
-            version: currentVersion || t("installed_none"),
-          })}
-        </div>
-        {isUpToDate && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12,
-              color: "#5fdb6a",
-              marginTop: 4,
-            }}
-          >
-            <FaCheckCircle /> {t("up_to_date")}
-          </div>
-        )}
-        {updateAvailable && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12,
-              color: "#ffcf5c",
-              marginTop: 4,
-            }}
-          >
-            <FaArrowCircleUp />{" "}
-            {t("update_available", { version: latestVersion })}
-          </div>
-        )}
-        {!hasCurrentAndLatest && !loadingVersions && currentVersion === "" && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12,
-              opacity: 0.7,
-              marginTop: 4,
-            }}
-          >
-            <FaInfoCircle />{" "}
-            {latestVersion
-              ? t("no_driver_with_latest", { version: latestVersion })
-              : t("no_driver")}
-          </div>
-        )}
-      </PanelSectionRow>
-
-      <PanelSectionRow>
-        <div style={{ fontSize: 14, marginBottom: 4 }}>
-          {t("driver_version_label")}
-        </div>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <VersionDropdown
-          versions={effectiveVersions}
-          detailedVersions={detailedVersions}
-          showBuildNumbers={showBuildNumbers}
-          repoInfo={repoInfo}
-          latestVersion={latestVersion}
-          nvidiaVersions={nvidiaVersions}
-          channelFilters={channelFilters}
-          defaultChannel={defaultChannel}
-          categoryLabels={{
-            recommended: t("tag_recommended"),
-            nfb: t("tag_nfb"),
-            beta: t("tag_beta"),
-          }}
-          archTestingLabel={t("arch_testing_label")}
-          disabled={status.running}
-          onSelectionChange={setChosenVersion}
-        />
-      </PanelSectionRow>
-
-      <PanelSectionRow>
-        <ButtonItem layout="below" onClick={onShowReleaseNotes} disabled={!notesEntry}>
-          {t("release_notes_button")}
-        </ButtonItem>
-      </PanelSectionRow>
-
-      <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={onStart}
-          disabled={status.running || loadingVersions || selectedIsInstalled}
-        >
-          {status.running ? (
-            t("install_button_running")
-          ) : selectedIsInstalled ? (
-            t("install_button_installed")
-          ) : (
-            <div style={{ whiteSpace: "pre-line" }}>
-              {t("install_button", { version: chosenVersion })}
-            </div>
-          )}
-        </ButtonItem>
-      </PanelSectionRow>
-
-      {status.running && (
+    <>
+      <PanelSection>
         <PanelSectionRow>
-          <SeparatedBlock bottomBorder={false}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              marginBottom: 8,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <SiNvidia size={20} color="#76B900" />
+              <span style={{ fontSize: 16, fontWeight: 700 }}>
+                NVIDIA Driver
+              </span>
+            </div>
+            <ActionButton onClick={goToSettings}>
+              <FaCog size={14} />
+            </ActionButton>
+          </div>
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PluginUpdateBanner
+        info={pluginUpdateInfo}
+        onClick={() => {
+          pluginUpdateFocus.markExpanded();
+          goToSettings();
+        }}
+      />
+      <WhatsNewBanner
+        versions={getWhatsNewVersions()}
+        onFeatureRequest={() => {
+          featureRequestFocus.markExpanded();
+          goToSettings();
+        }}
+      />
+      <OtherPluginsBanner
+        onOpenSettings={() => {
+          otherPluginsFocus.markExpanded();
+          goToSettings();
+        }}
+      />
+
+      <PanelSection>
+        <PanelSectionRow>
+          <div style={{ fontSize: 13 }}>
+            {t("installed", {
+              version: currentVersion || t("installed_none"),
+            })}
+          </div>
+          {isUpToDate && (
             <div
               style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
                 fontSize: 12,
-                marginBottom: 6,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {t("step_label", { step: status.step, total: status.total_steps })}
-              {status.step >= 1 && status.step <= STEP_DESCRIPTION_KEYS.length
-                ? ` — ${t(STEP_DESCRIPTION_KEYS[status.step - 1], { version: status.driver_spec })}`
-                : status.message
-                  ? ` — ${status.message}`
-                  : ""}
-            </div>
-            <div
-              style={{
-                width: "100%",
-                height: 4,
-                background: "rgba(255,255,255,0.15)",
-                borderRadius: 2,
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: status.step === 0 ? "100%" : `${progressPct}%`,
-                  height: "100%",
-                  background: "#66c0f4",
-                  opacity: status.step === 0 ? 0.4 : 1,
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-          </SeparatedBlock>
-        </PanelSectionRow>
-      )}
-
-      {status.done && status.success && (
-        <PanelSectionRow>
-          <SeparatedBlock>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                textAlign: "center",
-                padding: "18px 10px 14px",
-                borderRadius: 8,
-                background: "rgba(95, 219, 106, 0.12)",
-                border: "1px solid rgba(95, 219, 106, 0.35)",
-              }}
-            >
-              <FaCheckCircle
-                style={{ fontSize: 42, color: "#5fdb6a", marginBottom: 8 }}
-              />
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
-                {t("done_title", { version: currentVersion || chosenVersion })}
-              </div>
-              <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 14 }}>
-                {t("done_body")}
-              </div>
-              <ButtonItem
-                layout="below"
-                bottomSeparator="none"
-                highlightOnFocus={false}
-                onClick={onReboot}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                  }}
-                >
-                  <FaPowerOff /> {t("reboot_button")}
-                </div>
-              </ButtonItem>
-            </div>
-          </SeparatedBlock>
-        </PanelSectionRow>
-      )}
-
-      {status.done && status.success === false && (
-        <PanelSectionRow>
-          <SeparatedBlock>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                textAlign: "center",
-                padding: "18px 10px 14px",
-                borderRadius: 8,
-                background: "rgba(255, 107, 107, 0.12)",
-                border: "1px solid rgba(255, 107, 107, 0.35)",
-              }}
-            >
-              <FaTimesCircle
-                style={{ fontSize: 42, color: "#ff6b6b", marginBottom: 8 }}
-              />
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
-                {t("failed_title")}
-              </div>
-              <div style={{ fontSize: 11, opacity: 0.75 }}>
-                {t("failed_body", {
-                  error:
-                    status.error_code === "arch_server_unreachable"
-                      ? t("error_arch_server_unreachable")
-                      : status.error || t("failed_default_error"),
-                })}
-              </div>
-            </div>
-          </SeparatedBlock>
-        </PanelSectionRow>
-      )}
-
-      {status.log.length > 0 && (
-        <PanelSectionRow>
-          <CollapsibleSection
-            label={t("log_label", { count: status.log.length })}
-            expanded={showLog}
-            onToggle={() => setShowLog((v) => !v)}
-          >
-            <div
-              style={{
-                maxHeight: 160,
-                overflowY: "auto",
-                fontSize: 10,
-                fontFamily: "monospace",
-                whiteSpace: "pre-wrap",
-                opacity: 0.8,
-                background: "rgba(0,0,0,0.2)",
-                padding: 6,
-                borderRadius: 4,
+                color: "#5fdb6a",
                 marginTop: 4,
               }}
             >
-              {status.log.slice(-20).join("\n")}
+              <FaCheckCircle /> {t("up_to_date")}
             </div>
-            {logPath && (
-              <SeparatedBlock>
-                <div style={{ fontSize: 10, opacity: 0.5 }}>
-                  {t("full_log_label", { path: logPath })}
-                </div>
-              </SeparatedBlock>
+          )}
+          {updateAvailable && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                color: "#ffcf5c",
+                marginTop: 4,
+              }}
+            >
+              <FaArrowCircleUp />{" "}
+              {t("update_available", { version: latestVersion })}
+            </div>
+          )}
+          {!hasCurrentAndLatest &&
+            !loadingVersions &&
+            currentVersion === "" && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  opacity: 0.7,
+                  marginTop: 4,
+                }}
+              >
+                <FaInfoCircle />{" "}
+                {latestVersion
+                  ? t("no_driver_with_latest", { version: latestVersion })
+                  : t("no_driver")}
+              </div>
             )}
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <div style={{ fontSize: 14, marginBottom: 4 }}>
+            {t("driver_version_label")}
+          </div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <VersionDropdown
+            versions={effectiveVersions}
+            detailedVersions={detailedVersions}
+            showBuildNumbers={showBuildNumbers}
+            repoInfo={repoInfo}
+            latestVersion={latestVersion}
+            nvidiaVersions={nvidiaVersions}
+            channelFilters={channelFilters}
+            defaultChannel={defaultChannel}
+            categoryLabels={{
+              recommended: t("tag_recommended"),
+              nfb: t("tag_nfb"),
+              beta: t("tag_beta"),
+            }}
+            archTestingLabel={t("arch_testing_label")}
+            disabled={status.running}
+            onSelectionChange={setChosenVersion}
+          />
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={onShowReleaseNotes}
+            disabled={!notesEntry}
+          >
+            {t("release_notes_button")}
+          </ButtonItem>
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={onStart}
+            disabled={status.running || loadingVersions || selectedIsInstalled}
+          >
+            {status.running ? (
+              t("install_button_running")
+            ) : selectedIsInstalled ? (
+              t("install_button_installed")
+            ) : (
+              <div style={{ whiteSpace: "pre-line" }}>
+                {t("install_button", { version: chosenVersion })}
+              </div>
+            )}
+          </ButtonItem>
+        </PanelSectionRow>
+
+        {status.running && (
+          <PanelSectionRow>
+            <SeparatedBlock bottomBorder={false}>
+              <div
+                style={{
+                  fontSize: 12,
+                  marginBottom: 6,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {t("step_label", {
+                  step: status.step,
+                  total: status.total_steps,
+                })}
+                {status.step >= 1 && status.step <= STEP_DESCRIPTION_KEYS.length
+                  ? ` — ${t(STEP_DESCRIPTION_KEYS[status.step - 1], { version: status.driver_spec })}`
+                  : status.message
+                    ? ` — ${status.message}`
+                    : ""}
+              </div>
+              <div
+                style={{
+                  width: "100%",
+                  height: 4,
+                  background: "rgba(255,255,255,0.15)",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: status.step === 0 ? "100%" : `${progressPct}%`,
+                    height: "100%",
+                    background: "#66c0f4",
+                    opacity: status.step === 0 ? 0.4 : 1,
+                    transition: "width 0.3s ease",
+                  }}
+                />
+              </div>
+            </SeparatedBlock>
+          </PanelSectionRow>
+        )}
+
+        {status.done && status.success && (
+          <PanelSectionRow>
+            <SeparatedBlock>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  textAlign: "center",
+                  padding: "18px 10px 14px",
+                  borderRadius: 8,
+                  background: "rgba(95, 219, 106, 0.12)",
+                  border: "1px solid rgba(95, 219, 106, 0.35)",
+                }}
+              >
+                <FaCheckCircle
+                  style={{ fontSize: 42, color: "#5fdb6a", marginBottom: 8 }}
+                />
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+                  {t("done_title", {
+                    version: currentVersion || chosenVersion,
+                  })}
+                </div>
+                <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 14 }}>
+                  {t("done_body")}
+                </div>
+                <ButtonItem
+                  layout="below"
+                  bottomSeparator="none"
+                  highlightOnFocus={false}
+                  onClick={onReboot}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <FaPowerOff /> {t("reboot_button")}
+                  </div>
+                </ButtonItem>
+              </div>
+            </SeparatedBlock>
+          </PanelSectionRow>
+        )}
+
+        {status.done && status.success === false && (
+          <PanelSectionRow>
+            <SeparatedBlock>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  textAlign: "center",
+                  padding: "18px 10px 14px",
+                  borderRadius: 8,
+                  background: "rgba(255, 107, 107, 0.12)",
+                  border: "1px solid rgba(255, 107, 107, 0.35)",
+                }}
+              >
+                <FaTimesCircle
+                  style={{ fontSize: 42, color: "#ff6b6b", marginBottom: 8 }}
+                />
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+                  {t("failed_title")}
+                </div>
+                <div style={{ fontSize: 11, opacity: 0.75 }}>
+                  {t("failed_body", {
+                    error:
+                      status.error_code === "arch_server_unreachable"
+                        ? t("error_arch_server_unreachable")
+                        : status.error || t("failed_default_error"),
+                  })}
+                </div>
+              </div>
+            </SeparatedBlock>
+          </PanelSectionRow>
+        )}
+
+        {status.log.length > 0 && (
+          <PanelSectionRow>
+            <CollapsibleSection
+              label={t("log_label", { count: status.log.length })}
+              expanded={showLog}
+              onToggle={() => setShowLog((v) => !v)}
+            >
+              <div
+                style={{
+                  maxHeight: 160,
+                  overflowY: "auto",
+                  fontSize: 10,
+                  fontFamily: "monospace",
+                  whiteSpace: "pre-wrap",
+                  opacity: 0.8,
+                  background: "rgba(0,0,0,0.2)",
+                  padding: 6,
+                  borderRadius: 4,
+                  marginTop: 4,
+                }}
+              >
+                {status.log.slice(-20).join("\n")}
+              </div>
+              {logPath && (
+                <SeparatedBlock>
+                  <div style={{ fontSize: 10, opacity: 0.5 }}>
+                    {t("full_log_label", { path: logPath })}
+                  </div>
+                </SeparatedBlock>
+              )}
+            </CollapsibleSection>
+          </PanelSectionRow>
+        )}
+
+        <PanelSectionRow>
+          <ToggleField
+            label={t("show_builds_label")}
+            description={t("show_builds_desc")}
+            checked={showBuildNumbers}
+            onChange={(v: boolean) => {
+              // No explicit reset needed: VersionDropdown's own fallback
+              // logic (computed at render time from its `showBuildNumbers`
+              // prop) picks up the matching-granularity latest automatically
+              // once its current pick no longer exists in the new list.
+              setShowBuildNumbers(v);
+              persistSettings({ show_build_numbers: v });
+            }}
+            disabled={status.running || loadingVersions}
+          />
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <div style={{ fontSize: 14, marginTop: 12, marginBottom: 4 }}>
+            {t("default_channel_label")}
+          </div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <DropdownItem
+            rgOptions={[
+              { data: "recommended", label: t("channel_recommended") },
+              { data: "nfb", label: t("channel_nfb") },
+              { data: "beta", label: t("channel_beta") },
+              { data: "all", label: t("channel_all") },
+            ]}
+            selectedOption={defaultChannel}
+            {...({ childrenContainerWidth: "max" } as any)}
+            onChange={(o: any) => {
+              const value = o?.data as DefaultChannelChoice;
+              setDefaultChannel(value);
+              persistSettings({ default_channel: value });
+            }}
+          />
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <CollapsibleSection
+            label={t("channel_filter_label")}
+            expanded={showChannelFilters}
+            onToggle={() => {
+              const next = !showChannelFilters;
+              setShowChannelFilters(next);
+              persistSettings({ channel_filters_expanded: next });
+            }}
+          >
+            <PanelSectionRow>
+              <ToggleField
+                label={t("channel_recommended")}
+                checked={channelFilters.recommended}
+                onChange={(v: boolean) =>
+                  setChannelFilters((f) => ({ ...f, recommended: v }))
+                }
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ToggleField
+                label={t("channel_nfb")}
+                checked={channelFilters.nfb}
+                onChange={(v: boolean) =>
+                  setChannelFilters((f) => ({ ...f, nfb: v }))
+                }
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ToggleField
+                label={t("channel_beta")}
+                checked={channelFilters.beta}
+                onChange={(v: boolean) =>
+                  setChannelFilters((f) => ({ ...f, beta: v }))
+                }
+              />
+            </PanelSectionRow>
           </CollapsibleSection>
         </PanelSectionRow>
-      )}
-
-      <PanelSectionRow>
-        <ToggleField
-          label={t("show_builds_label")}
-          description={t("show_builds_desc")}
-          checked={showBuildNumbers}
-          onChange={(v: boolean) => {
-            // No explicit reset needed: VersionDropdown's own fallback
-            // logic (computed at render time from its `showBuildNumbers`
-            // prop) picks up the matching-granularity latest automatically
-            // once its current pick no longer exists in the new list.
-            setShowBuildNumbers(v);
-            persistSettings({ show_build_numbers: v });
-          }}
-          disabled={status.running || loadingVersions}
-        />
-      </PanelSectionRow>
-
-      <PanelSectionRow>
-        <div style={{ fontSize: 14, marginTop: 12, marginBottom: 4 }}>
-          {t("default_channel_label")}
-        </div>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <DropdownItem
-          rgOptions={[
-            { data: "recommended", label: t("channel_recommended") },
-            { data: "nfb", label: t("channel_nfb") },
-            { data: "beta", label: t("channel_beta") },
-            { data: "all", label: t("channel_all") },
-          ]}
-          selectedOption={defaultChannel}
-          {...({ childrenContainerWidth: "max" } as any)}
-          onChange={(o: any) => {
-            const value = o?.data as DefaultChannelChoice;
-            setDefaultChannel(value);
-            persistSettings({ default_channel: value });
-          }}
-        />
-      </PanelSectionRow>
-
-      <PanelSectionRow>
-        <CollapsibleSection
-          label={t("channel_filter_label")}
-          expanded={showChannelFilters}
-          onToggle={() => {
-            const next = !showChannelFilters;
-            setShowChannelFilters(next);
-            persistSettings({ channel_filters_expanded: next });
-          }}
-        >
-          <PanelSectionRow>
-            <ToggleField
-              label={t("channel_recommended")}
-              checked={channelFilters.recommended}
-              onChange={(v: boolean) =>
-                setChannelFilters((f) => ({ ...f, recommended: v }))
-              }
-            />
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ToggleField
-              label={t("channel_nfb")}
-              checked={channelFilters.nfb}
-              onChange={(v: boolean) =>
-                setChannelFilters((f) => ({ ...f, nfb: v }))
-              }
-            />
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ToggleField
-              label={t("channel_beta")}
-              checked={channelFilters.beta}
-              onChange={(v: boolean) =>
-                setChannelFilters((f) => ({ ...f, beta: v }))
-              }
-            />
-          </PanelSectionRow>
-        </CollapsibleSection>
-      </PanelSectionRow>
-
-      <PluginUpdateSection
-        info={pluginUpdateInfo}
-        checking={checkingPluginUpdate}
-        expanded={pluginUpdateExpanded}
-        onToggle={() => setPluginUpdateExpanded((v) => !v)}
-        onCheckNow={onCheckPluginUpdate}
-      />
-    </PanelSection>
+      </PanelSection>
+    </>
   );
 }
 
 export default definePlugin(() => {
   loadTranslations();
+
+  // Fired by Plugin._main() on the Python side (see decky-plugin-toolkit's
+  // PluginUpdaterMixin) as soon as Decky loads this plugin — not gated
+  // behind the user ever opening its panel, unlike PluginUpdateProvider's
+  // own on-mount check.
+  const updateListener = addEventListener(
+    "plugin_update_available",
+    (info: PluginUpdateInfo) => {
+      toaster.toast({
+        title: i18n.t("settings:settings_title"),
+        body: i18n.t("settings:update_available", {
+          version: info?.latest_version,
+        }),
+      });
+    },
+  );
 
   // Runs once when Decky (re)loads this plugin's frontend bundle — which
   // happens at Decky startup, and in practice also whenever the Steam
@@ -826,7 +896,18 @@ export default definePlugin(() => {
   return {
     name: "decky-nvidia-update",
     titleView: <div className={staticClasses.Title}>{i18n.t("title")}</div>,
-    content: <Content />,
+    content: (
+      <PluginUpdateProvider>
+        <OtherPluginsProvider selfPluginId={SELF_PLUGIN_ID}>
+          <WhatsNewProvider currentVersion={CURRENT_VERSION}>
+            <Content />
+          </WhatsNewProvider>
+        </OtherPluginsProvider>
+      </PluginUpdateProvider>
+    ),
     icon: <SiNvidia color="#76B900" />,
+    onDismount() {
+      removeEventListener("plugin_update_available", updateListener);
+    },
   };
 });

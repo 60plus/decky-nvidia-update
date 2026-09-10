@@ -15,7 +15,9 @@ interface ReleaseNotesModalProps {
 function formatDate(raw: string): string {
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
-  return new Intl.DateTimeFormat(i18n.language, { dateStyle: "long" }).format(d);
+  return new Intl.DateTimeFormat(i18n.language, { dateStyle: "long" }).format(
+    d,
+  );
 }
 
 // ConfirmModal, not a bare ModalRoot with a hand-placed button: it's Decky's
@@ -28,7 +30,7 @@ export function ReleaseNotesModal({
   notes,
   closeModal,
 }: ReleaseNotesModalProps) {
-  const { t } = useTranslation();
+  const { t } = useTranslation("panel");
   return (
     <ConfirmModal
       strTitle={version}

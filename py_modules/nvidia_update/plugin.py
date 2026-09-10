@@ -10,8 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import decky
-
-from .plugin_updater import PluginUpdaterMixin
+from decky_plugin_toolkit import PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin
 
 # The plugin ships its own copy of the CLI tool (bin/steamos-nvidia-update.sh)
 # so the exact same script can be run by hand over SSH/terminal or driven
@@ -128,7 +127,7 @@ ERROR_CODE_MARKERS = {
 }
 
 
-class Plugin(PluginUpdaterMixin):
+class Plugin(PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin):
     # Mutable per-instance state (one update can run at a time).
     _state: Dict[str, Any] = dict(DEFAULT_STATE)
     _lock = asyncio.Lock()
@@ -516,6 +515,13 @@ class Plugin(PluginUpdaterMixin):
     async def _main(self) -> None:
         decky.logger.info(f"decky-nvidia-update loaded (script: {SCRIPT_PATH})")
         await self._grow_rootfs_best_effort()
+        try:
+            update_info = await self.check_plugin_update_on_load()
+            if update_info:
+                decky.logger.info(f"[_main] update available: {update_info['latest_version']}")
+                await decky.emit("plugin_update_available", update_info)
+        except Exception:
+            decky.logger.error(f"[_main] update check failed:\n{traceback.format_exc()}")
 
     async def _unload(self) -> None:
         decky.logger.info("decky-nvidia-update unloaded")
