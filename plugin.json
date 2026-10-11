@@ -1,7 +1,7 @@
 {
   "name": "Decky NVIDIA Update",
   "author": "60plus",
-  "version": "0.4.0-standalone.8",
+  "version": "0.4.0-standalone.9",
   "flags": [
     "debug",
     "root"
