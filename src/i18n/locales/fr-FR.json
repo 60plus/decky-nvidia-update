@@ -79,6 +79,7 @@
     "channel_driver_count_other": "{{count}} pilotes"
   },
   "settings": {
+    "plugin_update_wait": "Les mises à jour du plugin seront disponibles une fois l'état du pilote connu et aucune opération sur le pilote en cours.",
     "settings_title": "Réglages",
     "update_available": "Mise à jour disponible : v{{version}}"
   },

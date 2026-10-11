@@ -79,6 +79,7 @@
     "channel_driver_count_other": "{{count}} controladores"
   },
   "settings": {
+    "plugin_update_wait": "Las actualizaciones del plugin estarán disponibles cuando se conozca el estado del controlador y no haya ninguna operación en curso.",
     "settings_title": "Ajustes",
     "update_available": "Actualización disponible: v{{version}}"
   },

@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "version": "node -e \"const fs=require('fs');const p='./plugin.json';const o=JSON.parse(fs.readFileSync(p));o.version=process.env.npm_package_version;fs.writeFileSync(p,JSON.stringify(o,null,2)+'\\n');\" && git add plugin.json",
-    "build": "rollup -c",
-    "watch": "rollup -c -w",
+    "build": "node scripts/configure-release.mjs && rollup -c",
+    "watch": "node scripts/configure-release.mjs && rollup -c -w",
     "package": "bash package.sh",
     "fix:prettier": "prettier --config .prettierrc --write ./src",
     "check:prettier": "prettier ./src --check"

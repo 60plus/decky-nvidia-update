@@ -1,186 +1,127 @@
-# Decky NVIDIA Update: standalone A/B edition
+# decky-nvidia-update
 
-Development version: **0.4.0-standalone.8**, maintained in
-[60plus/decky-nvidia-update](https://github.com/60plus/decky-nvidia-update).
+![GitHub Downloads](https://img.shields.io/github/downloads/moi952/decky-nvidia-update/total)
+![Downloads latest](https://img.shields.io/github/downloads/moi952/decky-nvidia-update/latest/total)
+![Stars](https://img.shields.io/github/stars/moi952/decky-nvidia-update)
 
-A Decky Loader interface for preparing an NVIDIA driver in SteamOS's inactive
-A/B system slot. The ZIP includes its controller, package builder, slot staging,
-rollback and OS-update repair code. **No separately installed
-`steamos-nvidia-driver` or NVIDIA installer is required.**
+A [Decky Loader](https://decky.xyz/) plugin that installs or changes the NVIDIA driver
+from a running SteamOS system. It prepares the inactive A/B system slot without a USB
+stick, repair image or OS reinstall. Reboot when you're ready to use the new driver.
 
-This edition adapts the A/B method used by the desktop driver manager in
-steamos-nvidia-installer. It replaces the original plugin's live-root copy.
-The UI and driver version discovery originate in moi952/decky-nvidia-update.
+![Plugin overview](screenshots/overview.jpeg)
 
-## Install
+## Requirements
 
-Download the plugin ZIP from this fork's
-[releases](https://github.com/60plus/decky-nvidia-update/releases) and install it
-using Decky Loader's "Install Plugin from ZIP" option. Use the plugin ZIP asset,
-not GitHub's automatically generated source-code archive.
+Requires a supported SteamOS A/B installation with Btrfs root filesystems, separate
+`/home`, Decky Loader with root backend support, and Python 3.10 or newer.
 
-## Changes from the original plugin
+- **No fixed 8 GiB root requirement.** Driver preparation uses a compressed image on
+  `/home`, sized to the actual inactive root partition. Existing 8 GiB partitions
+  remain supported; resizing is not required. The prepared system must still fit.
+- Free space on `/home`: the inactive root partition's size plus 12 GiB, about
+  17 GiB for a 5 GiB root slot. Build tools and temporary files stay on `/home`.
+- NVIDIA GTX 16 or RTX hardware supported by the selected driver. The plugin checks
+  the GPU, libraries, kernel and system layout before preparing the driver.
 
-- Replace live-root driver installation with preparation of the inactive SteamOS
-  A/B slot. Compressed staging avoids requiring an enlarged 8 GiB root partition.
-- Bundle the controller, isolated package builder, rollback and OS repair runtime.
-  Work continues in a systemd service when the Decky panel closes.
-- Preserve the recognized native steamos-nvidia update hook and driver settings.
-- Offer original Arch packages and additional NVIDIA releases, with source/channel
-  labels, counts and a scrollable version picker that fits the SteamOS panel.
+The backend is bundled with the plugin; a separate NVIDIA installer is not required.
+See [SteamOS A/B details](docs/steamos-ab.md) for compatibility, rollback and checks.
 
-This fork is available for upstream review. It is not an upstream release.
+## What it does
 
-## Storage and supported systems
+- Pick any NVIDIA driver version available in the [Arch Linux
+  archive](https://archive.archlinux.org/packages/n/nvidia-utils/) and prepare it in
+  the inactive slot, or just hit the button to grab the latest.
+- Each version shows its source: **Arch**, **Arch testing**, or **NVIDIA**.
+  **Recommended (Arch)** contains the original Arch packages. Additional NVIDIA
+  versions use **New Feature Branch (NFB)**, **Beta**, or **Other NVIDIA** labels;
+  versions without Arch packages are marked **Needs build** and built before use.
 
-- An installed SteamOS A/B layout with Btrfs root filesystems and separate /home.
-  Both slot sets must be on the same disk; ambiguous or mounted targets are refused.
-- Modern `steamos-bootconf`, `steamos-chroot`, RAUC and the recognized Valve
-  post-install finalization sequence. Unknown layouts/scripts are refused.
-- NVIDIA GeForce GTX 16 or RTX GPUs with a documented match in the selected
-  NVIDIA release. Legacy proprietary-module GPUs are outside this edition's scope.
-- Decky Loader with root backend support, Python 3.10+ and SteamOS's normal build,
-  filesystem and update utilities. Missing prerequisites are reported.
-- Free space on /home: **the inactive root partition's size plus 12 GiB**
-  (about 17 GiB for a 5 GiB root slot). Temporary images and build files live here.
-- **No fixed 8 GiB root requirement and no partition or filesystem resize.**
-  The root image has the existing inactive partition's size. Btrfs Zstd compression,
-  removal of obsolete driver files and actual post-write space checks determine
-  whether the chosen system/driver fits. At least 256 MiB must remain on root.
-  This is not a promise that every future driver fits every 5 GiB installation.
+  <img src="screenshots/version-dropdown.jpeg" width="420" alt="Driver version dropdown">
 
-The version list also includes NVIDIA releases from 590 onward that Arch has not
-packaged. They are marked **Needs build**. Selecting one builds the three required
-packages from Arch packaging recipes using NVIDIA's downloads, then prepares the
-inactive slot in the same systemd job. Closing Decky does not interrupt this chain.
-Old releases may be incompatible with current recipes, the GPU or SteamOS glibc;
-these checks fail before writing the inactive slot. A catalog entry is not a
-recommendation; NVIDIA's historical "Recommended" label is omitted from the list.
+- Filter by source/channel, see how many versions each contains, and choose which
+  channel counts as "latest" when you open the plugin. The scrollable list displays
+  up to eight versions at once.
 
-**Recommended (Arch)** filters all original Arch packages. NVIDIA-source entries
-use NFB/Beta when NVIDIA provides that classification, otherwise **Other NVIDIA**.
-Every option names its source (`Arch`, `Arch testing`, or `NVIDIA`); NVIDIA builds
-also show `NFB`, `Beta` or `Other` and `Needs build`/`Compiled`. The filters show
-counts of distinct versions. Versions already packaged by Arch appear only in
-Recommended (Arch), so an NVIDIA channel can legitimately have zero entries.
-Build status is a label, not a second filter hiding the chosen channel.
-The update-channel
-setting uses the same classification, so historical NVIDIA labels cannot select
-an older driver as the recommended Arch update.
+  <img src="screenshots/channel-selector.jpeg" width="420" alt="Update channel selector">
 
-Custom packages are retained under `/home/.decky-nvidia-update/custom`, owned by
-root, with package metadata and SHA-256 checks. Completed builds are never
-overwritten or removed through the plugin, because either OS slot can need them
-for a later SteamOS update or rollback. Keep this directory when removing Decky.
-They use /home space, not additional root space. Missing or modified retained
-packages stop preparation instead of silently substituting an Arch version.
+- Read the real release notes for any version before installing — fetched live, not
+  bundled or guessed.
 
-## How preparation works
+  <img src="screenshots/release-notes.jpeg" width="420" alt="Release notes modal">
 
-1. Validate the booted root, both A/B slot sets, updater state, supported Valve
-   migration script and available /home space. Share the desktop updater's lock.
-2. Copy the active root into a fresh compressed Btrfs image on /home with a new
-   filesystem UUID, sized to the inactive root partition.
-3. Resolve matching driver packages, check the GPU and glibc requirements, and
-   compile against the exact target kernel in a disposable overlay on /home.
-4. Replace obsolete NVIDIA files in the image, copy the new payload, preserve
-   any native integration configuration, and verify all four modules and 32/64-bit
-   graphics-library dependencies. Build tools stay in the disposable overlay.
-5. Mark the inactive slot invalid, write the prepared image to that slot, and let
-   Valve migrate settings and boot files. Reapply NVIDIA boot settings, regenerate
-   initramfs, and validate the target before Valve may select it for the next boot.
+- Live step-by-step progress and a scrollback log while it runs, and a **Reboot now**
+  button once it's done.
+- Fully localized UI (English, French, Spanish).
+- Built-in plugin update checks, notifications and release selection are retained.
+  Official releases update from the author's repository; fork releases use the fork.
 
-**Preparation replaces the previous contents of the inactive root/var/EFI slot.**
-The active root is not unlocked or overwritten. The current system is retained as
-rollback. Games and user files are not installation targets. A/B boot metadata is
-updated; this is not a file-only operation.
+## Safety
 
-The process runs as a systemd service and logs to Decky's plugin log directory.
-Closing/reloading Decky does not own or terminate that service. Reboot is explicit.
-The UI distinguishes the current system from the driver prepared for the next boot.
+Games and user files are not installation targets. Driver preparation replaces the
+previous contents of the **inactive root/var/EFI slot**, while retaining the running
+system for rollback:
 
-Rollback validates both saved filesystem UUIDs, OS manifests, driver package
-metadata and module contents. It refuses a stale transaction after either system
-was replaced. Cancellation before the first reboot disables the prepared slot.
+- Downloads and builds run in disposable workspaces on `/home`. A fresh compressed
+  Btrfs image holds the prepared system; the active root is not unlocked or overwritten.
+- The target is checked before writing and validated before selection for the next
+  boot. Unknown layouts and insufficient space stop preparation.
+- The operation runs in a systemd service, so closing Decky does not interrupt it.
+  Plugin installation from Settings is unavailable while a driver operation is running.
+- A reboot is required to load the prepared driver; nothing forces one on you.
+- Rollback checks that the saved systems have not been replaced. See the
+  [A/B documentation](docs/steamos-ab.md) for details and retained custom packages.
 
-## Subsequent SteamOS updates
-
-On a plain supported SteamOS installation, a small bundled runtime is saved in
-`/usr/lib/decky-nvidia-update` in the prepared system. Its RAUC hook restores the
-exact saved package versions for the new target kernel before slot activation.
-If the packages, exact headers or supported update script are unavailable, the
-new slot is not activated. The runtime propagates to the new system.
-
-On systems with the recognized steamos-nvidia shared update hook, that integration
-continues to own OS repair. Its `driver.conf` pins are updated while preserving
-`TRIM_CUDA`, xpadneo and other settings. The manual transaction temporarily replaces
-its repair invocation inside a private mount namespace to avoid installing the old
-pin again. The installed native hook is preserved.
-
-Removing the Decky UI does not remove the installed driver or its OS repair runtime.
-Upstream plugin self-updates are disabled in this edition so they cannot
-replace the standalone backend with the original live-root implementation.
-
-## CLI
+## Building
 
 ```bash
-sudo bash bin/steamos-nvidia-update.sh --preflight
-sudo bash bin/steamos-nvidia-update.sh --driver 610.57.04-1
-sudo bash bin/steamos-nvidia-update.sh --status
-sudo bash bin/steamos-nvidia-update.sh --rollback
-sudo bash bin/steamos-nvidia-build.sh --version 615.71.09
-sudo python3 -I bin/standalone/driver.py install-custom 615.71.09
+pnpm install
+./package.sh
 ```
 
-`steamos-nvidia-update.sh --list` lists archived versions without root.
-`steamos-nvidia-build.sh` only builds retained packages; `install-custom` builds
-if needed and then prepares the inactive slot. The internal shell workers under
-`bin/standalone` are invoked only by the controller.
+`package.sh` builds the frontend and zips a ready-to-install plugin into `packages/`
+(auto-incrementing filename, never overwrites a previous build). Install the zip from the
+Decky Loader menu (Quick Access → the flask icon → the plus/install button) in Desktop or
+Game Mode.
 
-## Build and checks
+No Docker or Decky CLI needed. `package.sh` vendors the pinned Python
+`decky-plugin-toolkit` dependency and includes the A/B backend. Build checks and release
+configuration are documented in [SteamOS A/B details](docs/steamos-ab.md#build-and-checks).
 
-```bash
-pnpm install --frozen-lockfile
-python3 -m pip install --target py_modules --no-deps "git+https://github.com/moi952/decky-plugin-toolkit.git@v0.1.0"
-python3 -m unittest discover -s tests -v
-for script in bin/steamos-nvidia-update.sh bin/standalone/*.sh; do bash -n "$script"; done
-pnpm exec tsc --noEmit
-node tests/driver_dropdown.cjs
-node tests/dropdown_geometry.cjs
-bash package.sh
-```
+### Faster iteration over SSH (VS Code tasks)
 
-The backend's only vendored dependency is decky-plugin-toolkit, pinned to v0.1.0.
-`package.sh` bundles it and produces a ZIP in `packages/`.
+If you're actively developing and want to skip re-zipping/re-installing on every change:
 
-Build helpers run in a separate PID and mount namespace. Exiting the worker
-terminates package-hook daemons and releases their overlay mounts before the
-prepared Btrfs image is copied to the inactive slot. The write is refused if
-the image still has a loop device or remains registered as mounted in Btrfs.
-This fixes the `/etc` overlay `Stale file handle` failure caused by temporary
-Btrfs filesystem IDs while the build image was still mounted.
+1. Run the **settingscheck** task once — it creates `.vscode/settings.json` from
+   `.vscode/defsettings.json`. Edit it with your Deck's IP, SSH user/password/key.
+   `.vscode/settings.json` is gitignored — it holds your credentials, never commit it.
+2. Run the **builddeploy** task: builds the frontend, rsyncs the plugin folder to
+   `~/homebrew/plugins/decky-nvidia-update/` on the Deck, and restarts `plugin_loader`.
+3. Enable the plugin from the Decky Loader menu.
 
-The root-only regression test uses disposable image files under `/home`, with
-no writes to OS partitions. On an affected SteamOS kernel it reproduces the old
-failure, then verifies helper cleanup and successful `/etc` remounts after both
-successful and failed workers:
+## Architecture
 
-```bash
-sudo bash tests/linux_build_lifecycle.sh "$PWD/bin/standalone"
-```
+- `bin/steamos-nvidia-update.sh` is the CLI entry point. It runs standalone too:
+  `sudo ./bin/steamos-nvidia-update.sh --driver 610.57.04 -y`.
+- `bin/standalone/` contains the controller, isolated builder, A/B staging, rollback
+  and SteamOS update repair runtime.
+- `py_modules/nvidia_update/plugin.py` and `standalone.py` provide the backend RPCs,
+  start and reconnect to the systemd job, and emit `nvidia_update_progress` events.
+  The backend also fetches Arch versions and NVIDIA channel information and retains
+  the original toolkit's plugin self-update checks.
+- `src/index.tsx`, `src/VersionDropdown.tsx`, `src/ReleaseNotesModal.tsx` — the UI.
 
-This is a development implementation. Unit tests, syntax checks and frontend builds
-are not SteamOS runtime acceptance. Before release, validate on an isolated 5 GiB
-A/B SteamOS installation: upgrade, downgrade, insufficient space, interrupted write,
-Decky reload, reboot, rollback, and a subsequent SteamOS update. Then check actual
-NVIDIA graphics, Gaming/Desktop mode transitions and suspend on hardware.
+## Credits
 
-## Credits and license
+This plugin wraps and builds on
+[steamos-nvidia-installer](https://github.com/28allday/steamos-nvidia-installer) by
+[28allday](https://github.com/28allday) — the underlying driver-install mechanism (overlay,
+loopback scratch space, DKMS build) originates there. This project adapts it into a Decky
+Loader plugin with a UI.
 
-Original plugin by [moi952](https://github.com/moi952/decky-nvidia-update).
-Standalone SteamOS adaptation by [60plus](https://github.com/60plus/decky-nvidia-update),
-using the driver staging method from
-[28allday/steamos-nvidia-installer](https://github.com/28allday/steamos-nvidia-installer).
-The upstream installer
-MIT notice is included in `bin/standalone/LICENSE.steamos-nvidia` and is propagated
-with the installed runtime. The original plugin declares the MIT license.
+Compressed A/B preparation was adapted by [60plus](https://github.com/60plus) from
+the desktop driver updater approach in
+[SteamOS NVIDIA Installer](https://github.com/60plus/SteamOS_Nvidia_Installer).
+
+## License
+
+MIT.

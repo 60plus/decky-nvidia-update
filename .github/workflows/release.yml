@@ -67,6 +67,8 @@ jobs:
       - name: Bump version and create git tag
         run: |
           set -e
+          node scripts/configure-release.mjs "$GITHUB_REPOSITORY"
+          git add project.config.json src/project.config.json
           pnpm version ${{ github.event.inputs.bump }} --message "chore(release): v%s" --no-git-checks
           git push origin HEAD --follow-tags
 

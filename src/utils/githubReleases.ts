@@ -1,9 +1,14 @@
 // @ts-ignore — replaced at build time by rollup with the content of plugin.json
 import manifest from "@decky/manifest";
-import type { PluginRelease } from "@moi952/decky-plugin-toolkit";
+import {
+  fetchPluginReleases as fetchReleasesForRepo,
+  type PluginRelease,
+} from "@moi952/decky-plugin-toolkit";
+import projectConfig from "../project.config.json";
 
 export const CURRENT_VERSION: string = manifest?.version ?? "0.0.0";
 
-// Local standalone builds must not offer the upstream in-place installer.
+const REPO = `${projectConfig.githubOwner}/${projectConfig.githubRepo}`;
+
 export const fetchPluginReleases = (): Promise<PluginRelease[]> =>
-  Promise.resolve([]);
+  fetchReleasesForRepo(REPO);

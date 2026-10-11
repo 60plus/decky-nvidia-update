@@ -133,16 +133,14 @@ class StandaloneMixin:
             if transaction.get('pending_reboot'):
                 self._state.update(done=True, success=True, driver_spec=transaction.get('version'))
 
-    async def check_plugin_update_on_load(self):
-        return None
-
-    async def check_plugin_update_now(self):
-        return dict(current_version='0.4.0-standalone.8', latest_version='', has_update=False,
-                    release_url='', asset_url='', sha256='', plugin_display_name='Decky NVIDIA Update',
-                    checked_ok=True)
-
-    async def update_plugin(self, *args, **kwargs):
-        raise RuntimeError('Install standalone builds manually; upstream packages use a different backend')
+        # Keep the toolkit's normal plugin updater, independently of the
+        # NVIDIA transaction. A failed release check must not stop job recovery.
+        try:
+            update_info = await self.check_plugin_update_on_load()
+            if update_info:
+                await decky.emit('plugin_update_available', update_info)
+        except Exception as error:
+            decky.logger.error(f'Plugin update check failed: {error}')
 
     async def list_custom_builds(self):
         return await controller('custom-list')

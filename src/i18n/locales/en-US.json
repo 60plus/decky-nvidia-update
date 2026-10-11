@@ -79,6 +79,7 @@
     "channel_nvidia_other": "Other NVIDIA"
   },
   "settings": {
+    "plugin_update_wait": "Plugin updates are available once driver status is known and no driver operation is running.",
     "settings_title": "Settings",
     "update_available": "Update available: v{{version}}"
   },

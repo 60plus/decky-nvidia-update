@@ -198,6 +198,7 @@ function Content() {
   const [chosenVersion, setChosenVersion] = useState<string>("");
   const [loadingVersions, setLoadingVersions] = useState<boolean>(true);
   const [status, setStatus] = useState<UpdateStatus>(IDLE_STATUS);
+  const [statusLoaded, setStatusLoaded] = useState(false);
   const [showLog, setShowLog] = useState<boolean>(false);
   const [nvidiaVersions, setNvidiaVersions] = useState<NvidiaVersionMap>(
     () => cachedNvidiaVersions ?? IDLE_NVIDIA_VERSIONS,
@@ -251,7 +252,12 @@ function Content() {
   useEffect(() => {
     call<[], string>("get_current_version").then(setCurrentVersion);
     call<[], RepoInfo>("get_driver_repo_info").then(setRepoInfo);
-    call<[], UpdateStatus>("get_status").then(setStatus);
+    call<[], UpdateStatus>("get_status")
+      .then((data) => {
+        setStatus(data);
+        setStatusLoaded(true);
+      })
+      .catch(() => setStatusLoaded(false));
     call<[], string>("get_log_path").then(setLogPath);
     call<[], string[]>("list_driver_versions_detailed").then((v) => {
       console.log(`[nvidia-update] Arch detailed versions (${v.length}):`, v);
@@ -390,7 +396,10 @@ function Content() {
   };
 
   useEffect(() => {
-    const listener = (data: UpdateStatus) => setStatus(data);
+    const listener = (data: UpdateStatus) => {
+      setStatus(data);
+      setStatusLoaded(true);
+    };
     addEventListener("nvidia_update_progress", listener);
     return () => removeEventListener("nvidia_update_progress", listener);
   }, []);
@@ -574,7 +583,12 @@ function Content() {
   const goToSettings = () => setView("settings");
 
   if (view === "settings") {
-    return <SettingsView onBack={() => setView("main")} />;
+    return (
+      <SettingsView
+        onBack={() => setView("main")}
+        pluginUpdateBlocked={!statusLoaded || status.running || buildStatus.running}
+      />
+    );
   }
 
   return (
