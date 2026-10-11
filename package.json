@@ -1,6 +1,6 @@
 {
   "name": "decky-nvidia-update",
-  "version": "0.4.0-standalone.9",
+  "version": "0.4.0",
   "display_name": "NVIDIA Driver Update",
   "description": "Standalone NVIDIA driver preparation for the inactive SteamOS A/B slot, with compressed staging and rollback.",
   "type": "module",
@@ -14,7 +14,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/60plus/decky-nvidia-update.git"
+    "url": "git+https://github.com/moi952/decky-nvidia-update.git"
   },
   "keywords": [
     "decky",
@@ -23,8 +23,8 @@
     "steamos",
     "nvidia"
   ],
-  "author": "60plus",
-  "contributors": ["moi952 (original plugin)"],
+  "author": "moi952",
+  "contributors": ["60plus (SteamOS A/B adaptation)"],
   "license": "MIT",
   "devDependencies": {
     "@decky/rollup": "^1.0.2",
