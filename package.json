@@ -1,8 +1,8 @@
 {
   "name": "decky-nvidia-update",
-  "version": "0.3.0",
+  "version": "0.4.0-standalone.8",
   "display_name": "NVIDIA Driver Update",
-  "description": "Pick and install an NVIDIA driver version directly on a running SteamOS system — no USB stick, no reinstall.",
+  "description": "Standalone NVIDIA driver preparation for the inactive SteamOS A/B slot, with compressed staging and rollback.",
   "type": "module",
   "scripts": {
     "version": "node -e \"const fs=require('fs');const p='./plugin.json';const o=JSON.parse(fs.readFileSync(p));o.version=process.env.npm_package_version;fs.writeFileSync(p,JSON.stringify(o,null,2)+'\\n');\" && git add plugin.json",
@@ -14,7 +14,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/moi952/decky-nvidia-update.git"
+    "url": "git+https://github.com/60plus/decky-nvidia-update.git"
   },
   "keywords": [
     "decky",
@@ -23,7 +23,8 @@
     "steamos",
     "nvidia"
   ],
-  "author": "moi952",
+  "author": "60plus",
+  "contributors": ["moi952 (original plugin)"],
   "license": "MIT",
   "devDependencies": {
     "@decky/rollup": "^1.0.2",

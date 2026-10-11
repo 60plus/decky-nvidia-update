@@ -13,6 +13,7 @@ import decky
 from decky_plugin_toolkit import PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin
 
 from .custom_build import CustomBuildMixin
+from .standalone import StandaloneMixin
 
 # The plugin ships its own copy of the CLI tool (bin/steamos-nvidia-update.sh)
 # so the exact same script can be run by hand over SSH/terminal or driven
@@ -22,14 +23,6 @@ SCRIPT_PATH = Path(decky.DECKY_PLUGIN_DIR) / "bin" / "steamos-nvidia-update.sh"
 # Full run output, persisted — so a failure can be read with `cat`/`tail -f`
 # instead of screenshotting the UI's scrollback. Overwritten each run.
 LOG_FILE = Path(decky.DECKY_PLUGIN_LOG_DIR) / "nvidia-update-run.log"
-
-# README's own documented requirement: SteamOS's stock 5GiB rootfs-A/B has
-# no headroom for a driver install; steamos-nvidia-installer grows it to at
-# least 8GiB. Checking the partition's TOTAL size (not just what's free
-# right now) catches a still-stock-5GiB system even when it currently has
-# plenty of free space — a little under 8192 MiB to allow for filesystem
-# overhead in what `df` reports on an actually-grown 8GiB partition.
-ROOTFS_MIN_TOTAL_MB = 7600
 
 SETTINGS_FILE = Path(decky.DECKY_PLUGIN_SETTINGS_DIR) / "settings.json"
 DEFAULT_SETTINGS: Dict[str, Any] = {
@@ -129,7 +122,7 @@ ERROR_CODE_MARKERS = {
 }
 
 
-class Plugin(PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin, CustomBuildMixin):
+class Plugin(StandaloneMixin, PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin, CustomBuildMixin):
     # Mutable per-instance state (one update can run at a time).
     _state: Dict[str, Any] = dict(DEFAULT_STATE)
     _lock = asyncio.Lock()
@@ -194,42 +187,6 @@ class Plugin(PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin, Custo
             }
         except Exception as e:
             decky.logger.error(f"[get_driver_repo_info] {e}")
-            return empty
-
-    async def get_rootfs_space_info(self) -> Dict[str, Any]:
-        """Upfront, purely informational check the UI uses to warn BEFORE
-        starting an install — not a substitute for the script's own late-stage
-        space check (right before the real install copy, once the exact
-        payload size is known), which stays the actual safety net. This just
-        avoids spending the whole DKMS build only to fail at the very end
-        on a partition that was obviously too small from the start.
-
-        Re-runs the same best-effort btrfs grow _main() does on plugin load
-        (rather than relying on that having already finished by the time the
-        frontend calls this) so a session where the GPT partition was grown
-        but the filesystem hadn't caught up yet doesn't get a false
-        "undersized" warning from a stale, pre-grow `df` reading."""
-        await self._grow_rootfs_best_effort()
-        empty = {"total_mb": 0, "avail_mb": 0, "undersized": False}
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "df", "-m", "--output=size,avail", "/",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-                env=_clean_env(),
-            )
-            out, _ = await proc.communicate()
-            if proc.returncode != 0:
-                return empty
-            lines = out.decode(errors="replace").strip().splitlines()
-            total_mb, avail_mb = (int(x) for x in lines[-1].split())
-            return {
-                "total_mb": total_mb,
-                "avail_mb": avail_mb,
-                "undersized": total_mb < ROOTFS_MIN_TOTAL_MB,
-            }
-        except Exception as e:
-            decky.logger.error(f"[get_rootfs_space_info] {e}")
             return empty
 
     async def get_nvidia_branch_info(self) -> Dict[str, Any]:
@@ -355,7 +312,7 @@ class Plugin(PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin, Custo
     # ── Update lifecycle ─────────────────────────────────────────────────
 
     async def get_status(self) -> Dict[str, Any]:
-        return dict(Plugin._state)
+        return dict(self._state)
 
     async def get_log_path(self) -> str:
         return str(LOG_FILE)
@@ -381,103 +338,6 @@ class Plugin(PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin, Custo
             decky.logger.error(f"[save_settings] {e}")
             return False
 
-    async def start_update(
-        self, driver_spec: str, force: bool = False
-    ) -> bool:
-        if Plugin._state["running"]:
-            return False
-        Plugin._state = dict(DEFAULT_STATE)
-        Plugin._state["running"] = True
-        Plugin._state["driver_spec"] = driver_spec
-        Plugin._state["message"] = "Starting…"
-        Plugin._task = asyncio.create_task(self._run(driver_spec, force))
-        return True
-
-    async def _run(self, driver_spec: str, force: bool) -> None:
-        args = ["bash", str(SCRIPT_PATH), "--driver", driver_spec, "-y"]
-        if force:
-            args.append("--force")
-        decky.logger.info(f"[nvidia-update] launching: {' '.join(args)}")
-
-        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with open(LOG_FILE, "w", encoding="utf-8") as logf:
-                logf.write(
-                    f"=== nvidia-update {datetime.now().isoformat(timespec='seconds')} "
-                    f"— driver={driver_spec} force={force} ===\n"
-                )
-                logf.flush()
-
-                proc = await asyncio.create_subprocess_exec(
-                    *args,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    env=_clean_env(),
-                )
-                assert proc.stdout is not None
-                while True:
-                    raw = await proc.stdout.readline()
-                    if not raw:
-                        break
-                    line = ANSI_RE.sub("", raw.decode(errors="replace")).rstrip()
-                    if not line:
-                        continue
-
-                    logf.write(line + "\n")
-                    logf.flush()
-
-                    Plugin._state["log"].append(line)
-                    Plugin._state["log"] = Plugin._state["log"][-200:]
-
-                    # `message` only updates on an actual step transition, so
-                    # the UI shows a stable "what this step is doing" line
-                    # instead of flickering through every noisy line in
-                    # between (download percentages, raw pacman output...).
-                    # Those still land in the full scrollable `log` above.
-                    m = STEP_RE.match(line)
-                    if m:
-                        Plugin._state["step"] = int(m.group(1))
-                        Plugin._state["total_steps"] = int(m.group(2))
-                        Plugin._state["message"] = m.group(3)
-
-                    await decky.emit("nvidia_update_progress", dict(Plugin._state))
-
-                rc = await proc.wait()
-                logf.write(f"=== exited with code {rc} ===\n")
-
-            Plugin._state["running"] = False
-            Plugin._state["done"] = True
-            Plugin._state["success"] = rc == 0
-            if rc != 0:
-                # die() in the script always prints "[fail] <reason>" right
-                # before exiting — surfacing that exact reason (e.g. "Could
-                # not reach archlinux.org...") in the prominent error box
-                # instead of a generic "exited with code 1" is the whole
-                # point: the user shouldn't have to open the log just to
-                # find out it's a transient server issue worth retrying.
-                fail_lines = [l for l in Plugin._state["log"] if l.startswith("[fail]")]
-                reason = fail_lines[-1][len("[fail] "):] if fail_lines else ""
-                # A recognized failure gets a proper localized message on the
-                # frontend (error_code) instead of relaying this raw,
-                # English-only script text — the marker itself is stripped
-                # either way so it never leaks into what's displayed.
-                Plugin._state["error_code"] = None
-                for marker, code in ERROR_CODE_MARKERS.items():
-                    if marker in reason:
-                        Plugin._state["error_code"] = code
-                        reason = reason.replace(marker, "").strip()
-                        break
-                Plugin._state["error"] = reason or f"Script exited with code {rc}."
-            await decky.emit("nvidia_update_progress", dict(Plugin._state))
-            decky.logger.info(f"[nvidia-update] finished rc={rc}")
-        except Exception as e:
-            decky.logger.error(f"[nvidia-update] exception: {e}\n{traceback.format_exc()}")
-            Plugin._state["running"] = False
-            Plugin._state["done"] = True
-            Plugin._state["success"] = False
-            Plugin._state["error"] = str(e)
-            await decky.emit("nvidia_update_progress", dict(Plugin._state))
-
     async def reboot_system(self) -> bool:
         try:
             await asyncio.create_subprocess_exec("systemctl", "reboot", env=_clean_env())
@@ -487,43 +347,6 @@ class Plugin(PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin, Custo
             return False
 
     # ── Lifecycle ────────────────────────────────────────────────────────
-
-    async def _grow_rootfs_best_effort(self) -> None:
-        """SteamOS system updates re-image whichever rootfs-A/B slot they
-        land on from Valve's own payload, which resets THAT slot's btrfs
-        filesystem back to its original ~5GiB size even when the underlying
-        GPT partition is bigger (e.g. after steamos-nvidia-installer.sh's
-        USB repair grew it). The driver itself survives updates fine — only
-        the filesystem's reported size silently regresses, and stays that
-        way until something regrows it. Growing (never shrinking) a live,
-        mounted btrfs filesystem is a normal, safe online operation. Runs
-        once per plugin load, which happens at least once per boot, so this
-        doesn't depend on the user ever opening the update UI itself."""
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "btrfs", "filesystem", "resize", "max", "/",
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
-                env=_clean_env(),
-            )
-            _, err = await proc.communicate()
-            if proc.returncode != 0:
-                decky.logger.error(
-                    f"[_grow_rootfs_best_effort] {err.decode(errors='replace').strip()}"
-                )
-        except Exception as e:
-            decky.logger.error(f"[_grow_rootfs_best_effort] {e}")
-
-    async def _main(self) -> None:
-        decky.logger.info(f"decky-nvidia-update loaded (script: {SCRIPT_PATH})")
-        await self._grow_rootfs_best_effort()
-        try:
-            update_info = await self.check_plugin_update_on_load()
-            if update_info:
-                decky.logger.info(f"[_main] update available: {update_info['latest_version']}")
-                await decky.emit("plugin_update_available", update_info)
-        except Exception:
-            decky.logger.error(f"[_main] update check failed:\n{traceback.format_exc()}")
 
     async def _unload(self) -> None:
         decky.logger.info("decky-nvidia-update unloaded")

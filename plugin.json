@@ -1,7 +1,7 @@
 {
   "name": "Decky NVIDIA Update",
-  "author": "moi952",
-  "version": "0.3.0",
+  "author": "60plus",
+  "version": "0.4.0-standalone.8",
   "flags": [
     "debug",
     "root"
@@ -14,7 +14,7 @@
       "gpu",
       "steamos"
     ],
-    "description": "Install or change the NVIDIA driver version directly on a running SteamOS system — no USB stick, no reinstall. Games, saves, Steam login, Decky, and other disks/partitions (including a Windows dual-boot) are never touched.",
+    "description": "Prepare an NVIDIA driver in the inactive SteamOS A/B system. Includes its own backend; no separate NVIDIA installer or 8 GiB root requirement. Reboot to switch systems.",
     "image": ""
   }
 }
