@@ -526,13 +526,32 @@ def rollback(operation_id=None):
     write_json(STATE / 'transaction.json', info)
 
 
+def cache_maintenance(lock, collect=True):
+    """Best effort, after a durable success or before reusing a legacy build.
+
+    Keep the shared updater lock alive in the worker, even if Decky reloads.
+    Cache errors must never change a completed driver's transaction outcome.
+    """
+    try:
+        command = ['unshare', '--mount', '--propagation', 'private', '/usr/bin/python3',
+                   '-I', str(HERE / 'cache.py'), '--lock-fd', str(lock.fileno())]
+        if not collect:
+            command.append('--migrate-only')
+        result = subprocess.run(command, pass_fds=(lock.fileno(),), stdout=subprocess.PIPE,
+                                text=True, check=True)
+        return json.loads(result.stdout)
+    except Exception as error:
+        print('[cache] Maintenance deferred: ' + str(error), file=sys.stderr, flush=True)
+        return dict(deferred=True, reason=str(error))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--operation-id', default=uuid.uuid4().hex)
     sub = parser.add_subparsers(dest='action', required=True)
     for name in ('install', 'install-custom', 'build'):
         sub.add_parser(name).add_argument('version')
-    for name in ('preflight', 'status', 'rollback', 'custom-list'):
+    for name in ('preflight', 'status', 'rollback', 'custom-list', 'cache-migrate', 'cache-cleanup'):
         sub.add_parser(name)
     p = sub.add_parser('prune'); p.add_argument('root'); p.add_argument('wanted')
     p = sub.add_parser('record')
@@ -560,14 +579,20 @@ def main():
         import fcntl
         with open('/run/steamos-nvidia-update.lock', 'w') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            if args.action in ('install-custom', 'build'):
+            if args.action in ('cache-migrate', 'cache-cleanup'):
+                print(json.dumps(cache_maintenance(lock, collect=args.action == 'cache-cleanup')))
+            elif args.action in ('install-custom', 'build'):
+                cache_maintenance(lock, collect=False)
                 build_custom(args.version)
                 if args.action == 'install-custom':
                     install(args.version, args.operation_id, custom=True)
+                    cache_maintenance(lock)
             elif args.action == 'install':
                 install(args.version, args.operation_id)
+                cache_maintenance(lock)
             else:
                 rollback(args.operation_id)
+                cache_maintenance(lock)
 
 
 if __name__ == '__main__':

@@ -170,14 +170,26 @@ class PluginUpdates(unittest.IsolatedAsyncioTestCase):
     async def test_startup_notifies_without_losing_pending_reboot(self):
         info = dict(latest_version='0.4.1', has_update=True)
         with patch.object(self.standalone, 'active', new_callable=AsyncMock, return_value=False), \
+             patch.object(self.standalone, 'controller', new_callable=AsyncMock, return_value={'migrated': []}) as controller, \
              patch.object(self.plugin, 'get_transaction_status', new_callable=AsyncMock,
                           return_value=dict(pending_reboot=True, version='615.78.08')), \
              patch.object(self.plugin, 'check_plugin_update_on_load', new_callable=AsyncMock, return_value=info), \
              patch.object(self.standalone.decky, 'emit', new_callable=AsyncMock) as emit:
             await self.plugin._main()
+            controller.assert_awaited_once_with('cache-migrate')
             emit.assert_awaited_once_with('plugin_update_available', info)
             self.assertTrue(self.plugin._state['success'])
             self.assertEqual(self.plugin._state['driver_spec'], '615.78.08')
+
+    async def test_migration_failure_does_not_hide_pending_reboot_or_plugin_update(self):
+        with patch.object(self.standalone, 'active', new_callable=AsyncMock, return_value=False), \
+             patch.object(self.standalone, 'controller', new_callable=AsyncMock, side_effect=OSError('busy')), \
+             patch.object(self.plugin, 'get_transaction_status', new_callable=AsyncMock,
+                          return_value=dict(pending_reboot=True, version='615.78.08')), \
+             patch.object(self.plugin, 'check_plugin_update_on_load', new_callable=AsyncMock, return_value=None) as check:
+            await self.plugin._main()
+            self.assertTrue(self.plugin._state['success'])
+            check.assert_awaited_once()
 
     async def test_failed_startup_check_does_not_stop_running_job_recovery(self):
         log = self.root / 'run.log'

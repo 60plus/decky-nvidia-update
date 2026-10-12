@@ -58,10 +58,46 @@ an older driver as the recommended Arch update.
 
 Custom packages are retained under `/home/.decky-nvidia-update/custom`, owned by
 root, with package metadata and SHA-256 checks. Completed builds are never
-overwritten or removed through the plugin, because either OS slot can need them
-for a later SteamOS update or rollback. Keep this directory when removing Decky.
+overwritten. Packages needed by either OS slot are retained for a later SteamOS
+update or rollback; confirmed-unused builds are collected automatically as
+described below. Keep the retained directory when removing Decky.
 They use /home space, not additional root space. Missing or modified retained
 packages stop preparation instead of silently substituting an Arch version.
+
+### Cache cleanup and migration
+
+After a successful driver preparation or rollback selection, the controller
+attempts automatic cleanup. It reads both `installed.json` and native
+`steamos-nvidia/driver.conf` pins, wherever present, from **both A/B slots**.
+Packages referenced by either slot remain, including while a reboot is pending
+or a prepared slot has been disabled by cancellation. A standalone build is kept
+when built; if it remains unreferenced, a later successful preparation may collect it.
+
+Inspection mounts the inactive Btrfs root read-only in a private namespace with
+log replay disabled. A dirty/unknown Btrfs log, unreadable slot, malformed pins,
+NVIDIA installation without saved pins, unfinished transaction or leftover driver
+workspace defers deletion. Collection shares the manual updater lock and the
+standalone/native repair locks, and checks that SteamOS/RAUC are idle. Unknown
+cache files, unsafe ownership, links and checksum failures are preserved with
+`[cache]` diagnostics. Cleanup is best effort: failure does not change a successful
+driver transaction into a failed one.
+
+On plugin startup and before a custom build, the controller also attempts to
+migrate compatible builds from `/home/.steamos-nvidia-custom-builds`. The original
+flat layout has no SHA-256 manifest, so migration validates its package list and
+each package's `.PKGINFO`, copies the three required packages into the new layout,
+and verifies a new SHA-256 manifest before publishing the complete build. This
+temporarily needs space for another copy. Existing retained builds are never
+replaced, and migration does not rewrite either slot's saved URLs.
+
+Startup migration alone removes nothing. A later cleanup removes validated legacy
+contents only when neither slot refers to them. Referenced legacy paths and their
+migrated copies remain available. Conflicting, incomplete, unsupported or otherwise
+uncertain builds remain in place with a diagnostic. Validated unused split-package
+outputs, such as OpenCL packages, are removed along with their unused legacy build.
+The original legacy scripts do not participate in the new locks; maintenance is
+deferred if a legacy driver command is detected. Do not run retired standalone
+scripts concurrently with the plugin.
 
 ## How preparation works
 
@@ -133,12 +169,17 @@ sudo bash bin/steamos-nvidia-update.sh --status
 sudo bash bin/steamos-nvidia-update.sh --rollback
 sudo bash bin/steamos-nvidia-build.sh --version 615.71.09
 sudo python3 -I bin/standalone/driver.py install-custom 615.71.09
+sudo python3 -I bin/standalone/driver.py cache-migrate
+sudo python3 -I bin/standalone/driver.py cache-cleanup
 ```
 
 `steamos-nvidia-update.sh --list` lists archived versions without root.
 `steamos-nvidia-build.sh` only builds retained packages; `install-custom` builds
 if needed and then prepares the inactive slot. The internal shell workers under
 `bin/standalone` are invoked only by the controller.
+`cache-migrate` only copies validated legacy builds. `cache-cleanup` additionally
+performs the guarded two-slot collection described above; both log why maintenance
+is deferred when the system cannot be checked safely.
 
 ## Build and checks
 
@@ -171,7 +212,17 @@ successful and failed workers:
 
 ```bash
 sudo bash tests/linux_build_lifecycle.sh "$PWD/bin/standalone"
+sudo env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_cache.py -v
+sudo env PYTHONDONTWRITEBYTECODE=1 python3 tests/linux_cache_lifecycle.py
 ```
+
+The cache tests use temporary package/slot fixtures. The lifecycle test mounts a
+disposable Btrfs image and verifies that inspection leaves its bytes unchanged,
+preserves both slots' pins and cleans up mounts even when inspection fails. It also
+checks that failed unmounts cannot trigger recursive deletion of a mounted root.
+Neither cache test command collects the machine's real driver cache or writes to
+its OS slots. The PR and release workflows run the cache fixtures with root
+permissions as well as the ordinary controller tests.
 
 This is a development implementation. Unit tests, syntax checks and frontend builds
 are not SteamOS runtime acceptance. Before release, validate on an isolated 5 GiB

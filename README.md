@@ -70,6 +70,9 @@ system for rollback:
 - A reboot is required to load the prepared driver; nothing forces one on you.
 - Rollback checks that the saved systems have not been replaced. See the
   [A/B documentation](docs/steamos-ab.md) for details and retained custom packages.
+- Unused custom builds are cleaned up after successful driver operations, while
+  preserving packages pinned by either A/B slot. Compatible legacy builds are
+  migrated with verification; uncertain data is kept with a diagnostic.
 
 ## Building
 

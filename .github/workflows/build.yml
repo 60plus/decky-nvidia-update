@@ -39,7 +39,9 @@ jobs:
 
             - name: Check standalone controller
               run: |
+                  export PYTHONDONTWRITEBYTECODE=1
                   python -m unittest discover -s tests -v
+                  sudo env PYTHONDONTWRITEBYTECODE=1 "$(command -v python)" -m unittest discover -s tests -p test_cache.py -v
                   for script in bin/steamos-nvidia-update.sh bin/standalone/*.sh; do bash -n "$script"; done
 
             - name: Build plugin

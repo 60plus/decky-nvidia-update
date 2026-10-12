@@ -132,6 +132,11 @@ class StandaloneMixin:
             transaction = await self.get_transaction_status()
             if transaction.get('pending_reboot'):
                 self._state.update(done=True, success=True, driver_spec=transaction.get('version'))
+            try:
+                result = await controller('cache-migrate')
+                decky.logger.info(f'Legacy NVIDIA cache migration: {result}')
+            except Exception as error:
+                decky.logger.error(f'Legacy NVIDIA cache migration deferred: {error}')
 
         # Keep the toolkit's normal plugin updater, independently of the
         # NVIDIA transaction. A failed release check must not stop job recovery.
@@ -150,5 +155,5 @@ class StandaloneMixin:
         return False
 
     async def delete_custom_build(self, *args, **kwargs):
-        # Either OS slot may pin these packages for future repair. Keep them.
+        # Collection is controller-owned and checks both slots under the locks.
         return False
