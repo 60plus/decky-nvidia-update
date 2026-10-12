@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  '@moi952/decky-ui-kit@0.6.0': 608bbdf1ab9863bf0e60c7aa17d24bd9b4a2cbe7b37ffd175db0f14ebbaacf17
-
 importers:
 
   .:
@@ -16,10 +13,10 @@ importers:
         version: 1.1.3
       '@moi952/decky-plugin-toolkit':
         specifier: github:moi952/decky-plugin-toolkit#v0.1.0&path:frontend
-        version: https://codeload.github.com/moi952/decky-plugin-toolkit/tar.gz/7e6ccb4f3c5e460a6551540e0f356c662b32e567#path:frontend(@decky/api@1.1.3)(@decky/ui@4.11.1)(@moi952/decky-ui-kit@0.6.0(patch_hash=608bbdf1ab9863bf0e60c7aa17d24bd9b4a2cbe7b37ffd175db0f14ebbaacf17)(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8))(i18next@25.10.10(typescript@5.9.3))(react-i18next@16.6.6(i18next@25.10.10(typescript@5.9.3))(react@19.2.8)(typescript@5.9.3))(react-icons@5.7.0(react@19.2.8))(react@19.2.8)
+        version: https://codeload.github.com/moi952/decky-plugin-toolkit/tar.gz/7e6ccb4f3c5e460a6551540e0f356c662b32e567#path:frontend(@decky/api@1.1.3)(@decky/ui@4.11.1)(@moi952/decky-ui-kit@0.6.1(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8))(i18next@25.10.10(typescript@5.9.3))(react-i18next@16.6.6(i18next@25.10.10(typescript@5.9.3))(react@19.2.8)(typescript@5.9.3))(react-icons@5.7.0(react@19.2.8))(react@19.2.8)
       '@moi952/decky-ui-kit':
-        specifier: ^0.6.0
-        version: 0.6.0(patch_hash=608bbdf1ab9863bf0e60c7aa17d24bd9b4a2cbe7b37ffd175db0f14ebbaacf17)(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8)
+        specifier: ^0.6.1
+        version: 0.6.1(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8)
       i18next:
         specifier: ^25.8.13
         version: 25.10.10(typescript@5.9.3)
@@ -89,8 +86,8 @@ packages:
       react-i18next: '>=13.0.0'
       react-icons: '>=5.0.0'
 
-  '@moi952/decky-ui-kit@0.6.0':
-    resolution: {integrity: sha512-N7XoD4guyKTWucrUicKI1ab0JBI55a91WXE35KQOpIb7LoV+FrxNprHNlFAQwl2JsERMYG08LKNtft/GhimIhQ==}
+  '@moi952/decky-ui-kit@0.6.1':
+    resolution: {integrity: sha512-gHsW3Vs2Sc2vZzi5rGSJ6mCCNZ7F9PCBd9b/QHklpFC5hMJ5+lc15m/xRB3bKIBOdtcfe4qyIO2ZE3GSaK21NA==}
     peerDependencies:
       '@decky/ui': '>=4.0.0'
       react: '>=18.0.0'
@@ -802,17 +799,17 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
-  '@moi952/decky-plugin-toolkit@https://codeload.github.com/moi952/decky-plugin-toolkit/tar.gz/7e6ccb4f3c5e460a6551540e0f356c662b32e567#path:frontend(@decky/api@1.1.3)(@decky/ui@4.11.1)(@moi952/decky-ui-kit@0.6.0(patch_hash=608bbdf1ab9863bf0e60c7aa17d24bd9b4a2cbe7b37ffd175db0f14ebbaacf17)(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8))(i18next@25.10.10(typescript@5.9.3))(react-i18next@16.6.6(i18next@25.10.10(typescript@5.9.3))(react@19.2.8)(typescript@5.9.3))(react-icons@5.7.0(react@19.2.8))(react@19.2.8)':
+  '@moi952/decky-plugin-toolkit@https://codeload.github.com/moi952/decky-plugin-toolkit/tar.gz/7e6ccb4f3c5e460a6551540e0f356c662b32e567#path:frontend(@decky/api@1.1.3)(@decky/ui@4.11.1)(@moi952/decky-ui-kit@0.6.1(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8))(i18next@25.10.10(typescript@5.9.3))(react-i18next@16.6.6(i18next@25.10.10(typescript@5.9.3))(react@19.2.8)(typescript@5.9.3))(react-icons@5.7.0(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@decky/api': 1.1.3
       '@decky/ui': 4.11.1
-      '@moi952/decky-ui-kit': 0.6.0(patch_hash=608bbdf1ab9863bf0e60c7aa17d24bd9b4a2cbe7b37ffd175db0f14ebbaacf17)(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8)
+      '@moi952/decky-ui-kit': 0.6.1(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8)
       i18next: 25.10.10(typescript@5.9.3)
       react: 19.2.8
       react-i18next: 16.6.6(i18next@25.10.10(typescript@5.9.3))(react@19.2.8)(typescript@5.9.3)
       react-icons: 5.7.0(react@19.2.8)
 
-  '@moi952/decky-ui-kit@0.6.0(patch_hash=608bbdf1ab9863bf0e60c7aa17d24bd9b4a2cbe7b37ffd175db0f14ebbaacf17)(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8)':
+  '@moi952/decky-ui-kit@0.6.1(@decky/ui@4.11.1)(react-icons@5.7.0(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@decky/ui': 4.11.1
       qrcode.react: 4.2.0(react@19.2.8)

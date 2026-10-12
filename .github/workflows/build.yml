@@ -47,6 +47,10 @@ jobs:
             - name: Build plugin
               run: |
                   set -e
+                  pnpm exec tsc --noEmit
+                  node tests/driver_dropdown.cjs
+                  node tests/dropdown_geometry.cjs
+                  node tests/plugin_updates.cjs
                   pnpm build
 
             - name: Create plugin zip
