@@ -16,13 +16,17 @@ import { FEATURE_REQUEST_URL, BUG_REPORT_URL } from "../utils/links";
 
 interface SettingsViewProps {
   onBack: () => void;
+  pluginUpdateBlocked: boolean;
 }
 
 // Just picks which of @moi952/decky-plugin-toolkit's ready-made Settings
 // sections this plugin wants, in what order — each section owns its own
 // state, focus-restore and translations internally. Driver-related settings
 // (build numbers, channel, channel filters) stay on the main panel, not here.
-export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({
+  onBack,
+  pluginUpdateBlocked,
+}) => {
   const { t } = useTranslation("settings");
 
   return (
@@ -40,11 +44,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
       </PanelSection>
 
       <UpdateHistorySection versions={getWhatsNewVersions()} />
-      <GitHubSection
-        fetchReleases={fetchPluginReleases}
-        featureRequestUrl={FEATURE_REQUEST_URL}
-        bugReportUrl={BUG_REPORT_URL}
-      />
+      {pluginUpdateBlocked ? (
+        <PanelSection>
+          <p>{t("plugin_update_wait")}</p>
+        </PanelSection>
+      ) : (
+        <GitHubSection
+          fetchReleases={fetchPluginReleases}
+          featureRequestUrl={FEATURE_REQUEST_URL}
+          bugReportUrl={BUG_REPORT_URL}
+        />
+      )}
       <SupportSection />
     </BackHandler>
   );

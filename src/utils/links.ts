@@ -1,5 +1,6 @@
-const REPO_ISSUES_URL =
-  "https://github.com/moi952/decky-nvidia-update/issues/new";
+import projectConfig from "../project.config.json";
+
+const REPO_ISSUES_URL = `https://github.com/${projectConfig.githubOwner}/${projectConfig.githubRepo}/issues/new`;
 
 export const FEATURE_REQUEST_URL = `${REPO_ISSUES_URL}?template=new_feature.md`;
 export const BUG_REPORT_URL = `${REPO_ISSUES_URL}?template=bug_report.md`;

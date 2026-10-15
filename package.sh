@@ -47,6 +47,8 @@ zip -r -q "$OUT" "$NAME" \
   -x "$NAME/node_modules/*" \
   -x "$NAME/src/*" \
   -x "$NAME/packages/*" \
+  -x "$NAME/tests/*" \
+  -x "$NAME/.verify-work/*" \
   -x "$NAME/.vscode/*" \
   -x "$NAME/.git/*" \
   -x "$NAME/.gitignore" \

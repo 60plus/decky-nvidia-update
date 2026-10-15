@@ -53,6 +53,20 @@ jobs:
             "git+https://github.com/moi952/decky-plugin-toolkit.git@v0.1.0"
           find py_modules -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
+      - name: Check standalone controller
+        run: |
+          export PYTHONDONTWRITEBYTECODE=1
+          python -m unittest discover -s tests -v
+          sudo env PYTHONDONTWRITEBYTECODE=1 "$(command -v python)" -m unittest discover -s tests -p test_cache.py -v
+          for script in bin/steamos-nvidia-update.sh bin/standalone/*.sh; do bash -n "$script"; done
+
+      - name: Check frontend
+        run: |
+          pnpm exec tsc --noEmit
+          node tests/driver_dropdown.cjs
+          node tests/dropdown_geometry.cjs
+          node tests/plugin_updates.cjs
+
       - name: Setup Git user
         run: |
           git config user.name "Decky CI"
@@ -67,6 +81,8 @@ jobs:
       - name: Bump version and create git tag
         run: |
           set -e
+          node scripts/configure-release.mjs "$GITHUB_REPOSITORY"
+          git add project.config.json src/project.config.json
           pnpm version ${{ github.event.inputs.bump }} --message "chore(release): v%s" --no-git-checks
           git push origin HEAD --follow-tags
 

@@ -3,6 +3,6 @@
   "githubRepo": "decky-nvidia-update",
   "pluginName": "decky-nvidia-update",
   "displayName": "NVIDIA Driver Update",
-  "description": "Pick and install an NVIDIA driver version directly on a running SteamOS system — no USB stick, no reinstall.",
+  "description": "Standalone NVIDIA driver preparation for the inactive SteamOS A/B slot, with compressed staging and rollback.",
   "author": "moi952"
 }

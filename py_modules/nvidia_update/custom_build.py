@@ -29,6 +29,7 @@ def _clean_env() -> Dict[str, str]:
     modules, since plugin.py imports this file's mixin class."""
     env = os.environ.copy()
     env.pop("LD_LIBRARY_PATH", None)
+    env.pop("LD_PRELOAD", None)
     return env
 
 
@@ -49,17 +50,17 @@ _VALID_VERSION_RE = re.compile(r"^[0-9]+(\.[0-9]+)*$")
 
 
 def _is_valid_version(version: str) -> bool:
-    return bool(_VALID_VERSION_RE.match(version))
+    return isinstance(version, str) and bool(_VALID_VERSION_RE.fullmatch(version))
 
 
 # NVIDIA's own public download server — the actual source every nvidia-utils/
-# lib32-nvidia-utils PKGBUILD fetches its .run installer from, so any version
-# listed here is guaranteed buildable regardless of whether Arch ever
-# packaged it. Ground truth for the version picker in the UI, independent of
+# lib32-nvidia-utils PKGBUILD fetches its .run installer from. These are
+# available releases, not a guarantee that today's recipes support each one.
+# The version picker uses this list independently of
 # Arch's own archive/NVIDIA's separate (unofficial, ~1.5-year) classification
 # lookup used elsewhere in this plugin.
 DOWNLOAD_INDEX_URL = "https://download.nvidia.com/XFree86/Linux-x86_64/"
-DIR_ENTRY_RE = re.compile(r"<a href='([0-9][^']*)/'>")
+DIR_ENTRY_RE = re.compile(r'''href=["']([0-9]+(?:\.[0-9]+)+)/["']''', re.I)
 # Versions below this are ancient (pre-2025-ish) and not worth offering —
 # keeps the dropdown to a reasonable, relevant length.
 MIN_BUILDABLE_MAJOR = 590
@@ -133,7 +134,7 @@ class CustomBuildMixin:
         every other external lookup in this plugin."""
         try:
             proc = await asyncio.create_subprocess_exec(
-                "curl", "-sfL", DOWNLOAD_INDEX_URL,
+                "curl", "-sfL", "--connect-timeout", "10", "--max-time", "45", DOWNLOAD_INDEX_URL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
                 env=_clean_env(),
@@ -141,13 +142,12 @@ class CustomBuildMixin:
             out, _ = await proc.communicate()
             if proc.returncode != 0:
                 return []
-            versions = []
+            versions = set()
             for v in DIR_ENTRY_RE.findall(out.decode(errors="replace")):
                 major = v.split(".", 1)[0]
                 if major.isdigit() and int(major) >= MIN_BUILDABLE_MAJOR:
-                    versions.append(v)
-            versions.sort(key=_version_key, reverse=True)
-            return versions
+                    versions.add(v)
+            return sorted(versions, key=_version_key, reverse=True)
         except Exception as e:
             decky.logger.error(f"[list_buildable_versions] {e}")
             return []
@@ -175,7 +175,7 @@ class CustomBuildMixin:
         url = RUN_URL_TEMPLATE.format(v=version)
         try:
             proc = await asyncio.create_subprocess_exec(
-                "curl", "-sfL", "-r", "0-4096", url,
+                "curl", "-sfL", "--connect-timeout", "10", "--max-time", "20", "-r", "0-4096", url,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
                 env=_clean_env(),
@@ -198,11 +198,11 @@ class CustomBuildMixin:
             # upstream writers. A wall-clock timeout around the whole
             # `communicate()` call below is the safety net instead.
             pipeline = (
-                f"curl -sfL '{url}' | tail -n +{skip} | zstd -dc 2>/dev/null "
+                f"curl -sfL --connect-timeout 10 --max-time 80 '{url}' | tail -n +{skip} | zstd -dc 2>/dev/null "
                 "| tar tf - 2>/dev/null"
             )
-            proc = await asyncio.create_subprocess_shell(
-                pipeline,
+            proc = await asyncio.create_subprocess_exec(
+                "bash", "-o", "pipefail", "-c", pipeline,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
                 env=_clean_env(),
@@ -213,7 +213,9 @@ class CustomBuildMixin:
                 proc.kill()
                 await proc.wait()
                 return empty
-            listing = set(out.decode(errors="replace").splitlines())
+            if proc.returncode != 0:
+                return empty
+            listing = {line.removeprefix('./') for line in out.decode(errors="replace").splitlines()}
             missing = [f for f in REQUIRED_INSTALLER_FILES if f not in listing]
             return {
                 "checked_ok": True,

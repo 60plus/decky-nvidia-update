@@ -25,3 +25,4 @@ py_modules/decky_plugin_toolkit-*.dist-info/
 # Claude Code project context — not for the repo
 CLAUDE.md
 .claude/
+.verify-work/
