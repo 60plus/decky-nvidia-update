@@ -22,7 +22,7 @@ PINS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target)        TARGET="${2:?}"; shift ;;
-    --pins)          PINS="${2:?}"; shift ;;
+    --pins)          PINS="${2:?--pins needs an argument}"; shift ;;
     --kernel)        KVER="${2:?}"; shift ;;
     --driver)        DRIVER_SPEC="${2:?--driver needs an argument}"; shift ;;
     --list)          LIST_ONLY=1 ;;

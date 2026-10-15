@@ -32,7 +32,29 @@ HOOK_END = '# decky-nvidia-update hook end\n'
 NATIVE_START = '# steamos-nvidia shared-update-hook v1\n'
 NATIVE_END = '# steamos-nvidia shared-update-hook end\n'
 ANCHORS = tuple(f'(( ERR == 0 )) && steamos-bootconf --image $UPDATED_SLOT set-mode {mode}'
-                for mode in ('reboot', 'first-boot'))
+                for mode in ('reboot', 'first-boot')) + (
+                    '(( ERR == 0 )) && holo-bootconf --image $UPDATED_SLOT set-mode first-boot',)
+FINALIZE_DIRECT = 'steamos-chroot --partset $UPDATED_SLOT -- steamos-finalize-install --no-kernel'
+# Match the complete fallback loop, including its failure check. Recognizing
+# just the chroot call could place the repair inside a loop or before an error.
+FINALIZE_LOOP = '''declare -ar FINISH=({holo,steamos}-finalize-install steamos-boot-install)
+declare -i  FINISHED=0
+
+for finish in ${FINISH[@]}
+do
+    if holo-chroot --partset $UPDATED_SLOT -- $finish --no-kernel
+    then
+        FINISHED=1
+        break
+    fi
+done
+
+if [ $FINISHED -ne 1 ]
+then
+    err "Failed to install bootloaders (tried: ${FINISH[*]})"
+fi'''
+FINALIZERS = (FINALIZE_DIRECT, FINALIZE_LOOP,
+              FINALIZE_LOOP.replace('if holo-chroot ', 'if steamos-chroot '))
 
 
 def run(*args):
@@ -99,11 +121,13 @@ def hook_text(text, command, temporary=False):
         # The native integration owns OS repair and consumes the preserved pins.
         return text
     anchors = [a for a in ANCHORS if a in text]
-    finalize = 'steamos-chroot --partset $UPDATED_SLOT -- steamos-finalize-install --no-kernel'
-    if len(anchors) != 1 or text.count(anchors[0]) != 1 or text.count(finalize) != 1:
+    finalizers = [f for f in FINALIZERS if f in text]
+    if (len(anchors) != 1 or text.count(anchors[0]) != 1
+            or len(finalizers) != 1 or text.count(finalizers[0]) != 1):
         raise ValueError('Unsupported Valve update script; no disk changes made')
     anchor = anchors[0]
-    if text.index(finalize) > text.index(anchor):
+    finalize = finalizers[0]
+    if text.index(finalize) + len(finalize) > text.index(anchor):
         raise ValueError('Unexpected Valve finalization order')
     block = HOOK_START + '''if (( ERR == 0 )); then
     [[ "$UPDATED_SLOT" == A || "$UPDATED_SLOT" == B ]] || fail "Unknown NVIDIA slot"
@@ -113,6 +137,8 @@ def hook_text(text, command, temporary=False):
     ''' + command + ''' || fail "NVIDIA preparation failed; target remains disabled"
 fi
 ''' + HOOK_END
+    if 'holo-bootconf' in anchor:
+        block = block.replace('    steamos-bootconf ', '    holo-bootconf ')
     text = text.replace(anchor, block + anchor)
     guard = '''# decky-nvidia-update mount guard v1
 if [[ ${DECKY_NVIDIA_UPDATE_NS:-0} != 1 ]]; then
@@ -237,6 +263,7 @@ def preflight():
         raise ValueError('The system updater is busy')
     post = Path('/usr/lib/rauc/post-install.sh').read_text()
     hook_text(post, '/bin/true', temporary=True)
+    subprocess.run([sys.executable, '-I', str(HERE / 'shutdown.py'), 'check'], check=True)
     size = int(run('blockdev', '--getsize64', devices[f'{target}/rootfs']))
     if size < 2 * 1024**3:
         raise ValueError('Invalid target root size')
@@ -274,6 +301,9 @@ def install(version, operation_id=None, custom=False):
         write_json(work / 'request.json', info)
         write_json(STATE / 'transaction.json', info)
         try:
+            # Arm in the host namespace, before Valve writes the shutdown sync
+            # trigger. /run survives staging but expires at the next boot.
+            subprocess.run([sys.executable, '-I', str(HERE / 'shutdown.py'), 'install'], check=True)
             subprocess.run(['unshare', '--mount', '--propagation', 'slave', '/bin/bash',
                             str(HERE / 'stage.sh'), str(work)], check=True)
             ready = json.loads((work / 'ready.json').read_text())

@@ -183,6 +183,50 @@ is deferred when the system cannot be checked safely.
 
 ## Build and checks
 
+The update hook recognizes the older direct `steamos-finalize-install` sequence
+and the reported SteamOS 3.10 `FINISH` fallback loop with `holo-bootconf` activation.
+The complete loop and its error check must match before a repair hook is inserted;
+unrecognized or ambiguous layouts still stop preflight before a slot is written.
+Supporting that script layout does not by itself qualify every development-channel
+build. Bash execution tests cover fallback finalizers and blocked activation after
+finalization or repair failure.
+
+Hardware validation on 2026-10-15 covered SteamOS Main 3.10 build
+`20261013.1000`, kernel `7.2.7-valve2-1-neptune-72-g31504582a073`, and an RTX 5060:
+the running Decky backend upgraded Arch NVIDIA 610.57.04 to 615.78.08 and rebooted
+successfully on a 5 GiB read-only root. The previous Main 610 slot passed identity
+verification. This qualifies that tested configuration, not all future Main builds.
+On that Main build, Valve's `holo-post-update-shutdown.service` could attempt its
+final configuration migration after `/efi` was unmounted. Before preparing a
+driver, the plugin now arms a temporary systemd drop-in under `/run`. It runs
+Valve's original helper in a private mount namespace, keeping EFI mounts available
+and mounting missing EFI filesystems using SteamOS's existing partset aliases.
+Missing EFI metadata or a failed mount stops the helper before migration.
+
+The guard checks the known vendor unit and helper hashes, refuses custom service
+overrides, and verifies the effective systemd configuration before staging.
+It is only enabled for the recognized late-shutdown implementation from
+`steamos-customizations 20260916.1-2`. Older Stable layouts without the shutdown
+trigger need no override; unknown late-shutdown implementations stop preflight.
+This conservative check may need updating for another Main build.
+
+The drop-in expires at reboot. It writes neither the running root nor `/etc`,
+requires no desktop helper, and cannot carry an old service override into a new
+OS boot. Each driver update through the plugin checks and arms it again.
+It is not a permanent fix for unrelated updates started outside the plugin.
+If a later preparation step fails, the harmless guard can remain until reboot;
+Valve's existing trigger condition still controls whether the service runs.
+
+A repeat Main 610.57.04 to 615.78.08 update and reboot passed with the earlier
+manual workaround removed. Shutdown migration completed without the EFI error,
+the temporary override disappeared after boot, and both slot identities passed.
+See [the validation record](validation-main-20261015.md) for the exact test scope.
+
+Arch installs resolve packages from the selected version and do not pass a pin-file
+argument. Custom installs and OS-update repair pass their saved package manifests.
+The argv regression tests exercise the shell call sites and the real worker parser
+without starting a build or touching either OS slot.
+
 ```bash
 pnpm install --frozen-lockfile
 python3 -m pip install --target py_modules --no-deps "git+https://github.com/moi952/decky-plugin-toolkit.git@v0.1.0"
@@ -214,6 +258,7 @@ successful and failed workers:
 sudo bash tests/linux_build_lifecycle.sh "$PWD/bin/standalone"
 sudo env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_cache.py -v
 sudo env PYTHONDONTWRITEBYTECODE=1 python3 tests/linux_cache_lifecycle.py
+sudo python3 -B tests/linux_shutdown_namespace.py
 ```
 
 The cache tests use temporary package/slot fixtures. The lifecycle test mounts a
@@ -223,6 +268,11 @@ checks that failed unmounts cannot trigger recursive deletion of a mounted root.
 Neither cache test command collects the machine's real driver cache or writes to
 its OS slots. The PR and release workflows run the cache fixtures with root
 permissions as well as the ordinary controller tests.
+
+The SteamOS-only shutdown probe hides EFI mounts in a private namespace to
+reproduce the original lookup failure, tests recovery and a missing-device error,
+and checks that the host mount remains unchanged. It never runs slot migration;
+an actual plugin update and reboot are still needed to validate shutdown behavior.
 
 This is a development implementation. Unit tests, syntax checks and frontend builds
 are not SteamOS runtime acceptance. Before release, validate on an isolated 5 GiB

@@ -1,6 +1,9 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,6 +17,30 @@ steamos-chroot --partset $UPDATED_SLOT -- steamos-finalize-install --no-kernel
 (( ERR == 0 )) && steamos-bootconf --image $UPDATED_SLOT set-mode reboot
 '''
 VERSION = '610.57.04-1'
+# Reported Valve main layout. This is a fixture, not the mislabelled attachment,
+# which still contains the older Stable finalization sequence.
+VALVE_MAIN = '''#!/bin/bash
+declare -ar FINISH=({holo,steamos}-finalize-install steamos-boot-install)
+declare -i  FINISHED=0
+
+for finish in ${FINISH[@]}
+do
+    if holo-chroot --partset $UPDATED_SLOT -- $finish --no-kernel
+    then
+        FINISHED=1
+        break
+    fi
+done
+
+if [ $FINISHED -ne 1 ]
+then
+    err "Failed to install bootloaders (tried: ${FINISH[*]})"
+fi
+(( ERR == 0 )) && holo-bootconf --image $UPDATED_SLOT set-mode first-boot
+if [ $ERR == 0 ]; then
+    echo "$BOOTED_SLOT" > "$HOLO_BOOTED_SLOT_SYNC_TRIGGER"
+fi
+'''
 URLS = ' '.join(f'https://archive.archlinux.org/packages/{p[0]}/{p}/{p}-{VERSION}-x86_64.pkg.tar.zst'
                 for p in ('nvidia-utils', 'nvidia-open-dkms', 'lib32-nvidia-utils'))
 
@@ -81,6 +108,79 @@ class ImageRelease(unittest.TestCase):
 
 
 class Hooks(unittest.TestCase):
+    def test_stable_fallback_chain_stays_before_hook(self):
+        # The maintainer's complete attachment uses this older fallback chain.
+        chain = r'''steamos-chroot --partset $UPDATED_SLOT -- steamos-finalize-install --no-kernel || \
+    steamos-chroot --partset $UPDATED_SLOT -- steamos-boot-install --no-kernel || \
+    err "Failed to install bootloaders"'''
+        original = VALVE.replace(d.FINALIZE_DIRECT, chain)
+        result = d.hook_text(original, '/bin/true', temporary=True)
+        self.assertIn(chain, result)
+        self.assertLess(result.index(chain) + len(chain), result.index(d.HOOK_START))
+        self.assertLess(result.index(d.HOOK_END), result.index('set-mode reboot'))
+
+    @unittest.skipUnless(os.name == 'posix' and shutil.which('bash'), 'Linux Bash execution test')
+    def test_main_execution_fallback_and_failures_never_activate_early(self):
+        preamble = r'''
+ERR=0 UPDATED_SLOT=B BOOTED_SLOT=A HOLO_BOOTED_SLOT_SYNC_TRIGGER=/dev/null
+err() { ERR=1; printf 'finalize-error\n'; }
+fail() { printf 'repair-error\n'; exit 42; }
+sync() { :; }
+holo-chroot() {
+    printf 'finalize:%s\n' "$*"
+    [[ "$FINALIZE_OK" == 1 && "$4" == steamos-finalize-install ]]
+}
+holo-bootconf() { printf 'bootconf:%s\n' "$*"; }
+repair() { printf 'repair\n'; [[ "$REPAIR_OK" == 1 ]]; }
+'''
+        script = preamble + d.hook_text(VALVE_MAIN, 'repair', temporary=True) + '\nexit "$ERR"\n'
+        for finalize_ok, repair_ok in ((True, True), (False, True), (True, False)):
+            with self.subTest(finalize_ok=finalize_ok, repair_ok=repair_ok):
+                env = dict(os.environ, FINALIZE_OK=str(int(finalize_ok)), REPAIR_OK=str(int(repair_ok)))
+                result = subprocess.run(['bash', '-c', script], env=env, text=True, capture_output=True)
+                lines = result.stdout.splitlines()
+                activation = [line for line in lines if 'set-mode first-boot' in line]
+                self.assertEqual(bool(activation), finalize_ok and repair_ok, result.stdout + result.stderr)
+                self.assertEqual('repair' in lines, finalize_ok)
+                if finalize_ok and repair_ok:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertLess(next(i for i, line in enumerate(lines) if 'steamos-finalize-install' in line),
+                                    lines.index('repair'))
+                    self.assertLess(lines.index('repair'), lines.index(activation[0]))
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+
+    def test_main_loop_hook_follows_complete_finalization_and_preserves_tail(self):
+        for namespace in ('holo', 'steamos'):
+            original = VALVE_MAIN.replace('if holo-chroot ', f'if {namespace}-chroot ')
+            result = d.hook_text(original, '/bin/true', temporary=True)
+            self.assertLess(result.index('err "Failed to install bootloaders'), result.index(d.HOOK_START))
+            self.assertLess(result.index(d.HOOK_END), result.index('set-mode first-boot'))
+            self.assertIn('    holo-bootconf --image "$UPDATED_SLOT" config', result)
+            self.assertEqual(result[result.index('(( ERR == 0 )) && holo-bootconf'):],
+                             original[original.index('(( ERR == 0 )) && holo-bootconf'):])
+            self.assertEqual(d.hook_text(result, '/bin/true', temporary=True), result)
+
+    def test_main_loop_incomplete_ambiguous_or_wrong_order_is_rejected(self):
+        for text in (VALVE_MAIN.replace('FINISHED=1', 'FINISHED=0'),
+                     VALVE_MAIN.replace('        break\n', ''),
+                     VALVE_MAIN.replace('if [ $FINISHED -ne 1 ]', 'if false'),
+                     VALVE_MAIN + d.FINALIZE_DIRECT,
+                     VALVE_MAIN + d.FINALIZE_LOOP,
+                     VALVE_MAIN + d.ANCHORS[0],
+                     VALVE_MAIN.replace(d.ANCHORS[-1] + '\n', '').replace(
+                         '#!/bin/bash\n', '#!/bin/bash\n' + d.ANCHORS[-1] + '\n')):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                d.hook_text(text, '/bin/true', temporary=True)
+
+    def test_main_native_hook_is_preserved_or_replaced_only_temporarily(self):
+        native = VALVE_MAIN.replace(d.ANCHORS[-1], d.NATIVE_START + '/native/repair other\n' + d.NATIVE_END + d.ANCHORS[-1])
+        self.assertEqual(d.hook_text(native, '/standalone'), native)
+        temporary = d.hook_text(native, '/standalone', temporary=True)
+        self.assertNotIn('/native/repair', temporary)
+        self.assertIn('/standalone', temporary)
+        self.assertIn('HOLO_BOOTED_SLOT_SYNC_TRIGGER', temporary)
+
     def test_standalone_hook_is_before_activation_and_idempotent(self):
         result = d.hook_text(VALVE, '/bin/bash /usr/lib/decky-nvidia-update/repair.sh "$UPDATED_SLOT"')
         self.assertLess(result.index('NVIDIA preparation failed'), result.index('set-mode reboot'))
@@ -180,12 +280,18 @@ class Pruning(unittest.TestCase):
 
 
 class Transactions(unittest.TestCase):
-    def check_install_failure(self, wrote):
+    def check_install_failure(self, wrote, guard_failure=False):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
             previous = dict(status='ready', source='B', target='A')
             info = dict(enough_space=True, source='A', target='B', devices={'A/rootfs': '/dev/source'})
+            calls = []
             def fail(command, **kwargs):
+                calls.append(command)
+                if str(d.HERE / 'shutdown.py') in command:
+                    if guard_failure:
+                        raise RuntimeError('injected shutdown guard failure')
+                    return
                 if wrote:
                     (Path(command[-1]) / 'writing').touch()
                 raise RuntimeError('injected staging failure')
@@ -193,6 +299,8 @@ class Transactions(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'injected'):
                     d.install(VERSION)
                 saved = json.loads((state / 'transaction.json').read_text())
+                self.assertIn(str(d.HERE / 'shutdown.py'), calls[0])
+                self.assertEqual(len(calls), 1 if guard_failure else 2)
                 if wrote:
                     protect.assert_called_once_with('B')
                     self.assertEqual(saved['status'], 'failed')
@@ -205,6 +313,9 @@ class Transactions(unittest.TestCase):
 
     def test_failed_write_disables_target_and_records_failure(self):
         self.check_install_failure(True)
+
+    def test_failed_shutdown_guard_stops_before_staging_and_preserves_rollback(self):
+        self.check_install_failure(False, guard_failure=True)
 
     def test_bad_driver_request_has_no_system_calls(self):
         with patch.object(d, 'preflight') as preflight:

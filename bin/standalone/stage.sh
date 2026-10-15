@@ -46,7 +46,8 @@ rsync -aHAXx --numeric-ids /etc/ "$WORK/root/etc/"
 require_space "$WORK/root" 256
 [[ $(blkid -s UUID -o value "$loop") != $(blkid -s UUID -o value "$SOURCE_DEV") ]] || die "Duplicate filesystem UUID"
 KERNEL=$(uname -r)
-build_payload "$HERE/payload.sh" "$WORK/build" --target "$WORK/root" --kernel "$KERNEL" --driver "$DRIVER" --pins "$PINS" --force -y
+# Arch installs have no pin file; the worker rejects an empty --pins value.
+build_payload "$HERE/payload.sh" "$WORK/build" --target "$WORK/root" --kernel "$KERNEL" --driver "$DRIVER" ${PINS:+--pins "$PINS"} --force -y
 btrfs filesystem sync "$WORK/root"
 btrfs property set "$WORK/root" ro true
 umount "$WORK/root"
