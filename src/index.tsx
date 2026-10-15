@@ -4,8 +4,8 @@ import {
   call,
   addEventListener,
   removeEventListener,
-  toaster,
 } from "@decky/api";
+import { pluginToast } from "./utils/toast";
 import {
   PanelSection,
   PanelSectionRow,
@@ -415,12 +415,12 @@ function Content() {
       // Preparation changes the inactive slot; the active version stays unchanged.
       call<[], string>("get_current_version").then(setCurrentVersion);
       refreshCustomBuilds();
-      toaster.toast({
+      pluginToast({
         title: t("toast_installed_title"),
         body: t("toast_installed_body"),
       });
     } else {
-      toaster.toast({
+      pluginToast({
         title: t("toast_failed_title"),
         body:
           status.error_code === "arch_server_unreachable"
@@ -531,7 +531,7 @@ function Content() {
           !effectiveVersions.includes(spec.replace(/-\d+$/, ""))),
     );
     if (!ok) {
-      toaster.toast({
+      pluginToast({
         title: t("toast_already_running_title"),
         body: t("toast_already_running_body"),
       });
@@ -544,7 +544,7 @@ function Content() {
   const onStart = async (specOverride?: string) => {
     const info = await call<[], RootfsSpaceInfo>("get_rootfs_space_info");
     if (!info.available || info.undersized) {
-      toaster.toast({
+      pluginToast({
         title: t("failed_title"),
         body:
           info.error ||
@@ -586,7 +586,9 @@ function Content() {
     return (
       <SettingsView
         onBack={() => setView("main")}
-        pluginUpdateBlocked={!statusLoaded || status.running || buildStatus.running}
+        pluginUpdateBlocked={
+          !statusLoaded || status.running || buildStatus.running
+        }
       />
     );
   }
@@ -1096,7 +1098,7 @@ export default definePlugin(() => {
   const updateListener = addEventListener(
     "plugin_update_available",
     (info: PluginUpdateInfo) => {
-      toaster.toast({
+      pluginToast({
         title: i18n.t("settings:settings_title"),
         body: i18n.t("settings:update_available", {
           version: info?.latest_version,
@@ -1133,7 +1135,7 @@ export default definePlugin(() => {
         buildable,
       );
       if (current && latest && compareDriverVersions(current, latest) < 0) {
-        toaster.toast({
+        pluginToast({
           title: i18n.t("toast_update_available_title"),
           body: `${current} → ${latest}`,
         });
