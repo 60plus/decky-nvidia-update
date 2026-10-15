@@ -84,6 +84,16 @@
     "update_available": "Update available: v{{version}}"
   },
   "whats_new": {
+    "v0_4_0": {
+      "title": "What's new in 0.4.0",
+      "items": [
+        "No more 8 GiB root requirement: the driver is now prepared in the inactive SteamOS A/B system and activated by a reboot, the current system is kept as a fallback",
+        "New rollback button to go back to the previous system",
+        "Compiled builds no longer in use are cleaned up automatically, and builds from earlier versions are migrated",
+        "Redesigned driver picker with the source of each version shown on a second line",
+        "Notifications now use the NVIDIA icon"
+      ]
+    },
     "v0_3_0": {
       "title": "What's new in 0.3.0",
       "items": [

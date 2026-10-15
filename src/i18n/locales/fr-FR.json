@@ -84,6 +84,16 @@
     "update_available": "Mise à jour disponible : v{{version}}"
   },
   "whats_new": {
+    "v0_4_0": {
+      "title": "Nouveautés de la 0.4.0",
+      "items": [
+        "Plus besoin d'agrandir la partition racine à 8 Go : le pilote est préparé dans le système A/B inactif de SteamOS et activé au redémarrage, le système actuel reste disponible en secours",
+        "Nouveau bouton de retour au système précédent",
+        "Les builds compilés devenus inutiles sont supprimés automatiquement, et ceux des versions précédentes sont migrés",
+        "Sélecteur de pilote repensé, avec la source de chaque version affichée sur une seconde ligne",
+        "Les notifications affichent désormais l'icône NVIDIA"
+      ]
+    },
     "v0_3_0": {
       "title": "Nouveautés de la 0.3.0",
       "items": [

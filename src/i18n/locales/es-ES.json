@@ -84,6 +84,16 @@
     "update_available": "Actualización disponible: v{{version}}"
   },
   "whats_new": {
+    "v0_4_0": {
+      "title": "Novedades de la 0.4.0",
+      "items": [
+        "Ya no hace falta ampliar la raíz a 8 GiB: el driver se prepara en el sistema A/B inactivo de SteamOS y se activa al reiniciar, el sistema actual se conserva como respaldo",
+        "Nuevo botón para volver al sistema anterior",
+        "Los builds compilados que ya no se usan se eliminan automáticamente, y los de versiones anteriores se migran",
+        "Selector de drivers rediseñado, con el origen de cada versión en una segunda línea",
+        "Las notificaciones ahora usan el icono de NVIDIA"
+      ]
+    },
     "v0_3_0": {
       "title": "Novedades de la 0.3.0",
       "items": [
