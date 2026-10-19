@@ -20,6 +20,17 @@ type LogSnapshot = {
   error: string | null;
 };
 
+function focusWithController(element: HTMLElement | null | undefined) {
+  if (!element) return;
+  element.dispatchEvent(
+    new element.ownerDocument.defaultView!.CustomEvent("vgp_requestfocus", {
+      bubbles: true,
+      cancelable: true,
+      detail: { button: 1, source: 0 },
+    }),
+  );
+}
+
 export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
   useScrollHint();
   const { t } = useTranslation("panel");
@@ -31,6 +42,10 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
   useControllerScroll(viewport, browsing && focused);
 
   const toggleMode = () => setBrowsing((value) => !value);
+  const closeButton = () =>
+    viewport.current
+      ?.closest(".DialogContent")
+      ?.querySelector<HTMLButtonElement>('button[type="submit"]');
 
   useEffect(() => {
     const doc = viewport.current?.ownerDocument;
@@ -42,24 +57,34 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
       e.stopPropagation();
       if (e.type === "vgp_onbuttondown" && !e.detail.is_repeat) {
         toggleMode();
-        const element = viewport.current;
-        element?.dispatchEvent(
-          new element.ownerDocument.defaultView!.CustomEvent(
-            "vgp_requestfocus",
-            {
-              bubbles: true,
-              cancelable: true,
-              detail: { button: 1, source: 0 },
-            },
-          ),
-        );
+        focusWithController(viewport.current);
       }
+    };
+    // ConfirmModal puts its body and buttons in separate navigation groups.
+    // Keep the Close button reachable without scrolling the log with the D-pad.
+    const navigate = (event: Event) => {
+      const e = event as GamepadEvent;
+      const target = e.target as Node | null;
+      const close = closeButton();
+      const next =
+        e.detail.button === GamepadButton.DIR_DOWN &&
+        viewport.current?.contains(target)
+          ? close
+          : e.detail.button === GamepadButton.DIR_UP && close?.contains(target)
+            ? viewport.current
+            : null;
+      if (!next) return;
+      e.preventDefault();
+      e.stopPropagation();
+      focusWithController(next);
     };
     doc?.addEventListener("vgp_onbuttondown", shortcut, true);
     doc?.addEventListener("vgp_onbuttonup", shortcut, true);
+    doc?.addEventListener("vgp_ondirection", navigate, true);
     return () => {
       doc?.removeEventListener("vgp_onbuttondown", shortcut, true);
       doc?.removeEventListener("vgp_onbuttonup", shortcut, true);
+      doc?.removeEventListener("vgp_ondirection", navigate, true);
     };
   }, []);
 
@@ -212,6 +237,13 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
           move(event.deltaY);
         }}
         onKeyDown={(event) => {
+          if (!browsing && event.key !== "End") {
+            if (event.key !== "ArrowDown") return;
+            event.preventDefault();
+            event.stopPropagation();
+            focusWithController(closeButton());
+            return;
+          }
           const height = event.currentTarget.clientHeight;
           const distances: Record<string, number> = {
             ArrowUp: -48,
