@@ -198,6 +198,31 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.adapter._state['error'], 'Write failed')
 
 
+class SavedLog(unittest.TestCase):
+    def test_saved_log_is_available_without_an_active_operation(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LOG', Path(tmp) / 'run.log'):
+            m.LOG.write_text('\x1b[1;32mFinished\x1b[0m\nSaved after reboot\n', encoding='utf-8')
+            result = m.read_update_log()
+        self.assertEqual(result['lines'], ['Finished', 'Saved after reboot'])
+        self.assertFalse(result['truncated'])
+        self.assertIsNone(result['error'])
+
+    def test_large_log_returns_bounded_recent_complete_lines(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LOG', Path(tmp) / 'run.log'):
+            m.LOG.write_text(('é' * 500 + '\n') * 1000 + ''.join(f'line {n}\n' for n in range(3000)), encoding='utf-8')
+            result = m.read_update_log()
+        self.assertTrue(result['truncated'])
+        self.assertEqual(result['lines'], [f'line {n}' for n in range(1000, 3000)])
+
+    def test_missing_log_is_empty_and_read_failure_is_explicit(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LOG', Path(tmp) / 'missing.log'):
+            self.assertEqual(m.read_update_log()['lines'], [])
+            self.assertIsNone(m.read_update_log()['error'])
+        with patch.object(m, 'LOG', Path(tmp)):
+            with patch.object(Path, 'open', side_effect=PermissionError('Access denied')):
+                self.assertIn('Access denied', m.read_update_log()['error'])
+
+
 class Progress(unittest.TestCase):
     def test_filesystem_read_error_is_not_hidden_by_the_worker_exit_code(self):
         for reason in ('Bad message (74)', 'Input/output error (5)'):

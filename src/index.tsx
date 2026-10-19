@@ -51,6 +51,8 @@ import type {
   DefaultChannelChoice,
 } from "./VersionDropdown";
 import { ReleaseNotesModal } from "./ReleaseNotesModal";
+import { UpdateLogModal } from "./UpdateLogModal";
+import { HelpIndex, helpProps } from "./ContextHelp";
 import { SeparatedBlock } from "./SeparatedBlock";
 import { CollapsibleSection } from "./CollapsibleSection";
 import type { CustomBuild } from "./CustomBuildSection";
@@ -180,7 +182,6 @@ function Content() {
   const [repoInfo, setRepoInfo] = useState<RepoInfo>(IDLE_REPO_INFO);
   const [defaultChannel, setDefaultChannel] =
     useState<DefaultChannelChoice>("all");
-  const [logPath, setLogPath] = useState<string>("");
   const [versions, setVersions] = useState<string[]>([]);
   const [detailedVersions, setDetailedVersions] = useState<string[]>([]);
   const [showBuildNumbers, setShowBuildNumbers] = useState<boolean>(false);
@@ -193,7 +194,6 @@ function Content() {
   const [statusLoaded, setStatusLoaded] = useState(false);
   const statusEpoch = useRef(0);
   const [requestPending, setRequestPending] = useState(false);
-  const [showLog, setShowLog] = useState<boolean>(false);
   const [nvidiaVersions, setNvidiaVersions] = useState<NvidiaVersionMap>(
     () => cachedNvidiaVersions ?? IDLE_NVIDIA_VERSIONS,
   );
@@ -283,7 +283,6 @@ function Content() {
   useEffect(() => {
     call<[], string>("get_current_version").then(setCurrentVersion);
     call<[], RepoInfo>("get_driver_repo_info").then(setRepoInfo);
-    call<[], string>("get_log_path").then(setLogPath);
     call<[], string[]>("list_driver_versions_detailed").then((v) => {
       console.log(`[nvidia-update] Arch detailed versions (${v.length}):`, v);
       setDetailedVersions(v);
@@ -674,6 +673,7 @@ function Content() {
               onClick={() => {
                 void refreshStatus().catch(() => {});
               }}
+              {...helpProps("reconnect")}
             >
               {t("reconnect_status")}
             </ButtonItem>
@@ -695,9 +695,14 @@ function Content() {
                 NVIDIA Driver
               </span>
             </div>
-            <ActionButton onClick={goToSettings}>
-              <FaCog size={14} />
-            </ActionButton>
+            <div style={{ display: "flex", gap: 8 }}>
+              <ActionButton onClick={() => showModal(<HelpIndex />)}>
+                <FaInfoCircle size={14} />
+              </ActionButton>
+              <ActionButton onClick={goToSettings} {...helpProps("settings")}>
+                <FaCog size={14} />
+              </ActionButton>
+            </div>
           </div>
         </PanelSectionRow>
       </PanelSection>
@@ -842,6 +847,7 @@ function Content() {
           <ButtonItem
             layout="below"
             onClick={onShowReleaseNotes}
+            {...helpProps("notes")}
             disabled={!notesEntry}
           >
             {t("release_notes_button")}
@@ -852,6 +858,7 @@ function Content() {
           <ButtonItem
             layout="below"
             onClick={() => onStart()}
+            {...helpProps("install")}
             disabled={
               !statusLoaded ||
               requestPending ||
@@ -981,6 +988,7 @@ function Content() {
                     bottomSeparator="none"
                     highlightOnFocus={false}
                     onClick={onReboot}
+                    {...helpProps("reboot")}
                   >
                     <div
                       style={{
@@ -1033,39 +1041,15 @@ function Content() {
           </PanelSectionRow>
         )}
 
-        {status.log.length > 0 && (
-          <PanelSectionRow>
-            <CollapsibleSection
-              label={t("log_label", { count: status.log.length })}
-              expanded={showLog}
-              onToggle={() => setShowLog((v) => !v)}
-            >
-              <div
-                style={{
-                  maxHeight: 160,
-                  overflowY: "auto",
-                  fontSize: 10,
-                  fontFamily: "monospace",
-                  whiteSpace: "pre-wrap",
-                  opacity: 0.8,
-                  background: "rgba(0,0,0,0.2)",
-                  padding: 6,
-                  borderRadius: 4,
-                  marginTop: 4,
-                }}
-              >
-                {status.log.slice(-20).join("\n")}
-              </div>
-              {logPath && (
-                <SeparatedBlock>
-                  <div style={{ fontSize: 10, opacity: 0.5 }}>
-                    {t("full_log_label", { path: logPath })}
-                  </div>
-                </SeparatedBlock>
-              )}
-            </CollapsibleSection>
-          </PanelSectionRow>
-        )}
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={() => showModal(<UpdateLogModal />)}
+            {...helpProps("log")}
+          >
+            {t("view_log")}
+          </ButtonItem>
+        </PanelSectionRow>
 
         <PanelSectionRow>
           <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 8 }}>
@@ -1076,6 +1060,7 @@ function Content() {
             disabled={
               !statusLoaded || requestPending || status.running || !canRollback
             }
+            {...helpProps("rollback")}
             onClick={() =>
               showModal(
                 <ConfirmModal
@@ -1093,7 +1078,7 @@ function Content() {
         <PanelSectionRow>
           <ToggleField
             label={t("show_builds_label")}
-            description={t("show_builds_desc")}
+            {...helpProps("builds")}
             checked={showBuildNumbers}
             onChange={(v: boolean) => {
               // No explicit reset needed: VersionDropdown's own fallback
@@ -1110,6 +1095,7 @@ function Content() {
         <PanelSectionRow>
           <AnchoredDropdown
             label={t("default_channel_label")}
+            {...helpProps("channel")}
             options={[
               { value: "recommended", label: t("channel_recommended") },
               { value: "nfb", label: t("channel_nfb") },
@@ -1130,6 +1116,7 @@ function Content() {
         <PanelSectionRow>
           <CollapsibleSection
             label={t("channel_filter_label")}
+            helpTopic="filters"
             expanded={showChannelFilters}
             onToggle={() => {
               const next = !showChannelFilters;
@@ -1144,6 +1131,7 @@ function Content() {
                   counts.recommended,
                 )}
                 checked={channelFilters.recommended}
+                {...helpProps("recommended")}
                 onChange={(v: boolean) =>
                   setChannelFilters((f) => ({ ...f, recommended: v }))
                 }
@@ -1153,6 +1141,7 @@ function Content() {
               <ToggleField
                 label={channelFilterLabel(t("channel_nfb"), counts.nfb)}
                 checked={channelFilters.nfb}
+                {...helpProps("nfb")}
                 onChange={(v: boolean) =>
                   setChannelFilters((f) => ({ ...f, nfb: v }))
                 }
@@ -1162,6 +1151,7 @@ function Content() {
               <ToggleField
                 label={channelFilterLabel(t("channel_beta"), counts.beta)}
                 checked={channelFilters.beta}
+                {...helpProps("beta")}
                 onChange={(v: boolean) =>
                   setChannelFilters((f) => ({ ...f, beta: v }))
                 }
@@ -1174,6 +1164,7 @@ function Content() {
                   counts.nvidia_other,
                 )}
                 checked={channelFilters.nvidia_other}
+                {...helpProps("other")}
                 onChange={(v: boolean) =>
                   setChannelFilters((f) => ({ ...f, nvidia_other: v }))
                 }

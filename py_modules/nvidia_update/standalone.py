@@ -11,6 +11,28 @@ UNIT = 'decky-nvidia-update.service'
 CONTROLLER = Path(decky.DECKY_PLUGIN_DIR) / 'bin/standalone/driver.py'
 LOG = Path(decky.DECKY_PLUGIN_LOG_DIR) / 'nvidia-update-run.log'
 PHASE_STEPS = dict(preflight=1, custom=2, clone=3, payload=4, write=5, finalize=6, verify=7)
+LOG_MAX_BYTES = 512 * 1024
+LOG_MAX_LINES = 2000
+
+
+def read_update_log():
+    """Read the saved operation log without loading an unbounded file into Decky."""
+    try:
+        with LOG.open('rb') as stream:
+            size = stream.seek(0, 2)
+            start = max(0, size - LOG_MAX_BYTES)
+            stream.seek(start)
+            data = stream.read(LOG_MAX_BYTES)
+        if start:
+            # The byte window may start inside a UTF-8 character or a line.
+            data = data.partition(b'\n')[2]
+        lines = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', data.decode('utf-8', errors='replace')).splitlines()
+        return dict(lines=lines[-LOG_MAX_LINES:], truncated=bool(start or len(lines) > LOG_MAX_LINES),
+                    path=str(LOG), error=None)
+    except FileNotFoundError:
+        return dict(lines=[], truncated=False, path=str(LOG), error=None)
+    except OSError as error:
+        return dict(lines=[], truncated=False, path=str(LOG), error=str(error))
 
 
 def update_progress(state, lines):
@@ -68,6 +90,9 @@ async def active():
 
 
 class StandaloneMixin:
+    async def get_update_log(self):
+        return await asyncio.to_thread(read_update_log)
+
     async def get_rootfs_space_info(self):
         try:
             info = await controller('preflight')

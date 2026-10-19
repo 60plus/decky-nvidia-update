@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +44,32 @@ fi
 '''
 URLS = ' '.join(f'https://archive.archlinux.org/packages/{p[0]}/{p}/{p}-{VERSION}-x86_64.pkg.tar.zst'
                 for p in ('nvidia-utils', 'nvidia-open-dkms', 'lib32-nvidia-utils'))
+
+
+class RootSizeCompatibility(unittest.TestCase):
+    def check_size(self, gib, available_gib):
+        size = gib * 1024**3
+        answers = {
+            ('steamos-bootconf', 'selected-image'): 'A',
+            ('btrfs', 'property', 'get', '/', 'ro'): 'ro=true',
+            ('findmnt', '-n', '-o', 'TARGET', '--mountpoint', '/home'): '/home',
+            ('atomupd-manager', 'get-update-status'): 'idle',
+            ('busctl', 'get-property', 'de.pengutronix.rauc', '/', 'de.pengutronix.rauc.Installer', 'Operation'): 's "idle"',
+            ('blockdev', '--getsize64', '/dev/test-target'): str(size),
+        }
+        with patch.object(d, 'layout', return_value=('A', 'B', {'B/rootfs': '/dev/test-target'})), patch.object(d, 'run', side_effect=lambda *args: answers[args]), patch.object(d.shutil, 'which', return_value='/usr/bin/tool'), patch.object(Path, 'read_text', return_value='ID=steamos\n'), patch.object(d, 'hook_text'), patch.object(d.subprocess, 'run'), patch.object(d.shutil, 'disk_usage', return_value=SimpleNamespace(free=available_gib * 1024**3)):
+            return d.preflight()
+
+    def test_original_and_enlarged_roots_use_the_detected_target_size(self):
+        for gib in (5, 8):
+            with self.subTest(root_gib=gib):
+                result = self.check_size(gib, gib + 12)
+                self.assertEqual(result['target_bytes'], gib * 1024**3)
+                self.assertEqual(result['required_bytes'], (gib + 12) * 1024**3)
+                self.assertTrue(result['enough_space'])
+
+    def test_eight_gib_root_still_checks_home_space(self):
+        self.assertFalse(self.check_size(8, 19)['enough_space'])
 
 
 class TransactionStatus(unittest.TestCase):
