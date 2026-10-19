@@ -42,7 +42,8 @@ mount -o compress-force=zstd:3 "$loop" "$WORK/root"
 echo '[phase] clone Preparing the system image on /home'
 rsync -aHAXx --numeric-ids "$WORK/source/" "$WORK/root/"
 # The build needs the actual pacman/mirror settings, not the unmerged /etc base.
-rsync -aHAXx --numeric-ids /etc/ "$WORK/root/etc/"
+# Mirror deletions too, so removed base configuration cannot return on reboot.
+rsync -aHAXx --delete --numeric-ids /etc/ "$WORK/root/etc/"
 require_space "$WORK/root" 256
 [[ $(blkid -s UUID -o value "$loop") != $(blkid -s UUID -o value "$SOURCE_DEV") ]] || die "Duplicate filesystem UUID"
 KERNEL=$(uname -r)
