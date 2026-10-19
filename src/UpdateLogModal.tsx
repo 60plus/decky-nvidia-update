@@ -113,6 +113,7 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
     <ConfirmModal
       strTitle={
         <div
+          className="nvidia-log-title"
           style={{
             display: "flex",
             alignItems: "center",
@@ -135,6 +136,8 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
         .nvidia-update-log-modal { left: 0; right: 0; width: auto; justify-content: center; }
         .nvidia-update-log-modal .DialogContent { width: min(900px, 90vw); max-width: 90vw; margin-left: auto; margin-right: auto; }
         .nvidia-update-log-modal .DialogContent_InnerWidth { width: 100%; max-width: none; }
+        .nvidia-log-title { width: 100%; }
+        .nvidia-update-log-modal .DialogHeader:has(.nvidia-log-title) { width: 100%; }
       `}</style>
       <div
         role="status"

@@ -199,6 +199,35 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
 
 
 class SavedLog(unittest.TestCase):
+    def test_legacy_writer_survives_decky_log_rotation(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LEGACY_LOG', Path(tmp) / 'run.log'), patch.object(m, 'LOG', Path(tmp) / 'operations/run.log'):
+            with m.LEGACY_LOG.open('w') as writer:
+                writer.write('before reload\n')
+                writer.flush()
+                self.assertEqual(m.read_update_log()['lines'], ['before reload'])
+                self.assertEqual(m.LOG.stat().st_ino, m.LEGACY_LOG.stat().st_ino)
+                # Decky removes old top-level *.log files, never this subdirectory.
+                m.LEGACY_LOG.unlink()
+                writer.write('after reload\n')
+                writer.flush()
+                self.assertEqual(m.read_update_log()['lines'], ['before reload', 'after reload'])
+
+    def test_legacy_migration_does_not_replace_new_log(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LEGACY_LOG', Path(tmp) / 'old.log'), patch.object(m, 'LOG', Path(tmp) / 'new.log'):
+            m.LEGACY_LOG.write_text('old\n')
+            m.LOG.write_text('current\n')
+            m.preserve_legacy_log()
+            self.assertEqual(m.read_update_log()['lines'], ['current'])
+            self.assertEqual(m.LEGACY_LOG.read_text(), 'old\n')
+
+    def test_link_failure_keeps_legacy_log_readable(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LEGACY_LOG', Path(tmp) / 'old.log'), patch.object(m, 'LOG', Path(tmp) / 'new.log'):
+            m.LEGACY_LOG.write_text('legacy\n')
+            with patch.object(m.os, 'link', side_effect=OSError('No hard links')):
+                result = m.read_update_log()
+            self.assertEqual(result['lines'], ['legacy'])
+            self.assertEqual(result['path'], str(m.LEGACY_LOG))
+
     def test_saved_log_is_available_without_an_active_operation(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LOG', Path(tmp) / 'run.log'):
             m.LOG.write_text('\x1b[1;32mFinished\x1b[0m\nSaved after reboot\n', encoding='utf-8')

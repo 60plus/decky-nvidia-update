@@ -57,7 +57,7 @@
     "log_browse_history": "Browse history",
     "log_follow_latest": "Follow latest",
     "log_loading": "Loading log…",
-    "log_empty": "No driver operation has been recorded yet.",
+    "log_empty": "No saved driver log is available yet.",
     "log_unavailable": "Could not refresh the log. Retrying automatically…",
     "log_truncated": "Showing the latest {{count}} lines. The complete log is saved at the path below.",
     "full_log_label": "Full log: {{path}}",

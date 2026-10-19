@@ -119,7 +119,7 @@ The active root is not unlocked or overwritten. The current system is retained a
 rollback. Games and user files are not installation targets. A/B boot metadata is
 updated; this is not a file-only operation.
 
-The process runs as a systemd service and logs to Decky's plugin log directory.
+The process runs as a systemd service and keeps its log under `operations/` in Decky's plugin log directory, outside Decky's rotating backend logs. Open **View log** for the saved output. Live mode follows the newest line; press the left stick (L3) to browse with the right stick, and press L3 again to return to Live and normal navigation. The log also supports clicking to switch modes, plus mouse-wheel and keyboard scrolling in history mode.
 Closing/reloading Decky does not own or terminate that service. Reboot is explicit.
 The UI distinguishes the current system from the driver prepared for the next boot.
 

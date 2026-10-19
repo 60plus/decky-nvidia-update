@@ -13,16 +13,12 @@ import decky
 from decky_plugin_toolkit import PluginUpdaterMixin, WhatsNewSeenMixin, OtherPluginsSeenMixin
 
 from .custom_build import CustomBuildMixin
-from .standalone import StandaloneMixin
+from .standalone import StandaloneMixin, current_log_path
 
 # The plugin ships its own copy of the CLI tool (bin/steamos-nvidia-update.sh)
 # so the exact same script can be run by hand over SSH/terminal or driven
 # from this UI — one mechanism, two ways to trigger it.
 SCRIPT_PATH = Path(decky.DECKY_PLUGIN_DIR) / "bin" / "steamos-nvidia-update.sh"
-
-# Full run output, persisted — so a failure can be read with `cat`/`tail -f`
-# instead of screenshotting the UI's scrollback. Overwritten each run.
-LOG_FILE = Path(decky.DECKY_PLUGIN_LOG_DIR) / "nvidia-update-run.log"
 
 SETTINGS_FILE = Path(decky.DECKY_PLUGIN_SETTINGS_DIR) / "settings.json"
 DEFAULT_SETTINGS: Dict[str, Any] = {
@@ -316,7 +312,7 @@ class Plugin(StandaloneMixin, PluginUpdaterMixin, WhatsNewSeenMixin, OtherPlugin
         return dict(self._state)
 
     async def get_log_path(self) -> str:
-        return str(LOG_FILE)
+        return str(current_log_path())
 
     # ── Settings (persisted across sessions) ────────────────────────────
 

@@ -1,6 +1,7 @@
 """Decky RPC adapter for the bundled systemd-backed A/B transaction."""
 import asyncio
 import json
+import os
 from pathlib import Path
 import re
 import uuid
@@ -9,16 +10,38 @@ import decky
 
 UNIT = 'decky-nvidia-update.service'
 CONTROLLER = Path(decky.DECKY_PLUGIN_DIR) / 'bin/standalone/driver.py'
-LOG = Path(decky.DECKY_PLUGIN_LOG_DIR) / 'nvidia-update-run.log'
+LEGACY_LOG = Path(decky.DECKY_PLUGIN_LOG_DIR) / 'nvidia-update-run.log'
+# Decky rotates top-level *.log files on backend startup.
+LOG = LEGACY_LOG.parent / 'operations' / LEGACY_LOG.name
 PHASE_STEPS = dict(preflight=1, custom=2, clone=3, payload=4, write=5, finalize=6, verify=7)
 LOG_MAX_BYTES = 512 * 1024
 LOG_MAX_LINES = 2000
 
 
+def preserve_legacy_log():
+    if LOG.exists() or not LEGACY_LOG.is_file() or LEGACY_LOG.is_symlink():
+        return
+    try:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        # Keep the inode: an older systemd worker can still be appending through
+        # its open descriptor. A copy would miss those later lines.
+        os.link(LEGACY_LOG, LOG)
+    except FileExistsError:
+        pass  # Never replace a newer operation log.
+    except OSError as error:
+        decky.logger.error(f'Could not preserve the legacy operation log: {error}')
+
+
+def current_log_path():
+    return LEGACY_LOG if not LOG.exists() and LEGACY_LOG.exists() else LOG
+
+
 def read_update_log():
     """Read the saved operation log without loading an unbounded file into Decky."""
+    preserve_legacy_log()
+    path = current_log_path()
     try:
-        with LOG.open('rb') as stream:
+        with path.open('rb') as stream:
             size = stream.seek(0, 2)
             start = max(0, size - LOG_MAX_BYTES)
             stream.seek(start)
@@ -28,11 +51,11 @@ def read_update_log():
             data = data.partition(b'\n')[2]
         lines = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', data.decode('utf-8', errors='replace')).splitlines()
         return dict(lines=lines[-LOG_MAX_LINES:], truncated=bool(start or len(lines) > LOG_MAX_LINES),
-                    path=str(LOG), error=None)
+                    path=str(path), error=None)
     except FileNotFoundError:
-        return dict(lines=[], truncated=False, path=str(LOG), error=None)
+        return dict(lines=[], truncated=False, path=str(path), error=None)
     except OSError as error:
-        return dict(lines=[], truncated=False, path=str(LOG), error=str(error))
+        return dict(lines=[], truncated=False, path=str(path), error=str(error))
 
 
 def update_progress(state, lines):
@@ -184,7 +207,8 @@ class StandaloneMixin:
         while True:
             try:
                 running = await active()
-                lines = LOG.read_text(errors='replace').splitlines() if LOG.exists() else []
+                path = current_log_path()
+                lines = path.read_text(errors='replace').splitlines() if path.exists() else []
                 lines = [re.sub(r'\x1b\[[0-9;]*m', '', line) for line in lines]
                 self._state['log'] = lines[-200:]
                 update_progress(self._state, lines)
@@ -220,11 +244,13 @@ class StandaloneMixin:
 
     async def _main(self):
         decky.logger.info('Standalone NVIDIA A/B updater loaded')
+        preserve_legacy_log()
         if await active():
             self._state['running'] = True
-            action = 'rollback' if LOG.exists() and LOG.read_text(errors='replace').startswith('[action] rollback') else 'install'
+            path = current_log_path()
+            action = 'rollback' if path.exists() and path.read_text(errors='replace').startswith('[action] rollback') else 'install'
             self._state['action'] = action
-            lines = LOG.read_text(errors='replace').splitlines() if LOG.exists() else []
+            lines = path.read_text(errors='replace').splitlines() if path.exists() else []
             self._state['operation_id'] = next((line.removeprefix('[operation] ') for line in lines if line.startswith('[operation] ')), None)
             self._state['driver_spec'] = next((line.removeprefix('[driver] ') for line in lines if line.startswith('[driver] ')), None)
             self._task = asyncio.create_task(self._monitor_standalone(action))
