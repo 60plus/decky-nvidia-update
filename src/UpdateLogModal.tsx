@@ -3,6 +3,7 @@ import { call } from "@decky/api";
 import { ConfirmModal, Focusable, GamepadButton, ScrollPanel } from "@decky/ui";
 import { useTranslation } from "react-i18next";
 import { withTimeout } from "./utils/driverOperation";
+import { scrollHint, useScrollHint } from "./useScrollHint";
 
 // Steam's scroll panel forwards Focusable props and registers its scroll region.
 const LogScrollPanel = ScrollPanel as typeof Focusable;
@@ -15,6 +16,7 @@ type LogSnapshot = {
 };
 
 export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
+  useScrollHint();
   const { t } = useTranslation("panel");
   const [log, setLog] = useState<LogSnapshot | null>(null);
   const [error, setError] = useState(false);
@@ -74,7 +76,9 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
       modalClassName="nvidia-update-log-modal"
     >
       <style>{`
-        .nvidia-update-log-modal { width: min(900px, 90vw); max-width: 90vw; }
+        .nvidia-update-log-modal { left: 0; right: 0; width: auto; justify-content: center; }
+        .nvidia-update-log-modal .DialogContent { width: min(900px, 90vw); max-width: 90vw; margin-left: auto; margin-right: auto; }
+        .nvidia-update-log-modal .DialogContent_InnerWidth { width: 100%; max-width: none; }
       `}</style>
       <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.8 }}>
         {t("log_scroll_hint")} · {t(following ? "log_following" : "log_paused")}
@@ -91,6 +95,7 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
         aria-label={t("log_title")}
         tabIndex={0}
         onActivate={() => {}}
+        actionDescriptionMap={{ [GamepadButton.RSTICK_TOUCH]: scrollHint }}
         onScroll={(event) => {
           const element = event.currentTarget;
           setFollowing(

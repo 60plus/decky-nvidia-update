@@ -53,6 +53,7 @@ jobs:
                   node tests/dropdown_geometry.cjs
                   node tests/plugin_updates.cjs
                   node tests/driver_operation.cjs
+                  node tests/scroll_hint.cjs
                   pnpm build
 
             - name: Create plugin zip

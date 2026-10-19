@@ -24,7 +24,7 @@ export const HELP = {
   },
   filters: {
     title: "Filter by source / channel",
-    text: "These switches control which categories appear in the driver picker. They do not install, remove or change the active driver.\n\nCounts describe available versions in each source category, with duplicate Arch versions counted under Arch. Availability also depends on the current package and custom-build catalogues. Press X on an individual filter for its explanation.",
+    text: "These switches control which categories appear in the driver picker. They do not install, remove or change the active driver.\n\nCounts describe available versions in each source category, with duplicate Arch versions counted under Arch. Availability also depends on the current package and custom-build catalogues. Use the Help action on an individual filter for its explanation.",
   },
   channel: {
     title: "Update channel",
@@ -92,7 +92,11 @@ export function showHelp(topic: HelpTopic) {
 
 export function helpProps(topic: HelpTopic) {
   return {
-    onSecondaryButton: (event?: { stopPropagation(): void }) => {
+    onSecondaryButton: (event?: {
+      stopPropagation(): void;
+      preventDefault(): void;
+    }) => {
+      event?.preventDefault();
       event?.stopPropagation();
       showHelp(topic);
     },
@@ -131,8 +135,8 @@ export function HelpIndex({ closeModal }: { closeModal?: () => void }) {
       bAlertDialog
     >
       <p>
-        Press X on a focused control to read its explanation, or choose a topic
-        below.
+        Use Help in Steam's bottom bar for the focused control, or choose a
+        topic below.
       </p>
       <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
         {Object.entries(HELP).map(([topic, entry]) => (
