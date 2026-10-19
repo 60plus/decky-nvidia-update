@@ -48,7 +48,7 @@ export const HELP = {
   },
   log: {
     title: "Driver update log",
-    text: "Open the saved operation log in a larger window. It refreshes while an operation runs and remains available after restarting Decky. Scroll to read older entries; automatic following pauses until you return to the bottom.\n\nThe viewer limits very large logs to their recent portion and shows the full file path when you need the complete file. Opening or closing the viewer does not start, cancel or change the operation.",
+    text: "Open the saved operation log in a larger window. Live mode always follows the newest line at the bottom. Press the left stick (L3) to browse history with the right stick; press L3 again to return to Live. In history mode you can also use the mouse wheel or keyboard. Click the log to switch modes when using a mouse.\n\nThe log remains available after restarting Decky. Very large logs show their recent portion and the full file path. Opening or closing the viewer does not start, cancel or change the operation.",
   },
   notes: {
     title: "Release notes",

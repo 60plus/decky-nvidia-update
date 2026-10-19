@@ -1,12 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { call } from "@decky/api";
-import { ConfirmModal, Focusable, GamepadButton, ScrollPanel } from "@decky/ui";
+import {
+  ConfirmModal,
+  Focusable,
+  GamepadButton,
+  type GamepadEvent,
+} from "@decky/ui";
+import { SiNvidia } from "react-icons/si";
 import { useTranslation } from "react-i18next";
 import { withTimeout } from "./utils/driverOperation";
-import { scrollHint, useScrollHint } from "./useScrollHint";
-
-// Steam's scroll panel forwards Focusable props and registers its scroll region.
-const LogScrollPanel = ScrollPanel as typeof Focusable;
+import { stickHint, useScrollHint } from "./useScrollHint";
+import { ControllerGlyph } from "./ControllerGlyph";
+import { useControllerScroll } from "./useControllerScroll";
 
 type LogSnapshot = {
   lines: string[];
@@ -20,8 +25,43 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
   const { t } = useTranslation("panel");
   const [log, setLog] = useState<LogSnapshot | null>(null);
   const [error, setError] = useState(false);
-  const [following, setFollowing] = useState(true);
+  const [browsing, setBrowsing] = useState(false);
+  const [focused, setFocused] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
+  useControllerScroll(viewport, browsing && focused);
+
+  const toggleMode = () => setBrowsing((value) => !value);
+
+  useEffect(() => {
+    const doc = viewport.current?.ownerDocument;
+    const shortcut = (event: Event) => {
+      const e = event as GamepadEvent;
+      if (e.detail.button !== GamepadButton.LSTICK_CLICK) return;
+      if (!(e.target as Element)?.closest?.(".nvidia-update-log-modal")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.type === "vgp_onbuttondown" && !e.detail.is_repeat) {
+        toggleMode();
+        const element = viewport.current;
+        element?.dispatchEvent(
+          new element.ownerDocument.defaultView!.CustomEvent(
+            "vgp_requestfocus",
+            {
+              bubbles: true,
+              cancelable: true,
+              detail: { button: 1, source: 0 },
+            },
+          ),
+        );
+      }
+    };
+    doc?.addEventListener("vgp_onbuttondown", shortcut, true);
+    doc?.addEventListener("vgp_onbuttonup", shortcut, true);
+    return () => {
+      doc?.removeEventListener("vgp_onbuttondown", shortcut, true);
+      doc?.removeEventListener("vgp_onbuttonup", shortcut, true);
+    };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -50,24 +90,40 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
   }, []);
 
   useLayoutEffect(() => {
-    if (following && viewport.current)
+    if (!browsing && viewport.current)
       viewport.current.scrollTop = viewport.current.scrollHeight;
-  }, [log, following]);
+  }, [log, browsing]);
+
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element || browsing) return;
+    const observer = new ResizeObserver(() => {
+      element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [browsing]);
 
   const move = (distance: number) => {
     if (!viewport.current) return;
-    setFollowing(false);
-    viewport.current.scrollTop += distance;
-  };
-  const latest = () => {
-    setFollowing(true);
-    if (viewport.current)
-      viewport.current.scrollTop = viewport.current.scrollHeight;
+    if (browsing) viewport.current.scrollTop += distance;
   };
 
   return (
     <ConfirmModal
-      strTitle={t("log_title")}
+      strTitle={
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 24,
+          }}
+        >
+          <span>{t("log_title")}</span>
+          <SiNvidia size={34} color="#76b900" aria-label="NVIDIA" />
+        </div>
+      }
       strOKButtonText={t("close_button")}
       onOK={closeModal}
       onCancel={closeModal}
@@ -80,28 +136,77 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
         .nvidia-update-log-modal .DialogContent { width: min(900px, 90vw); max-width: 90vw; margin-left: auto; margin-right: auto; }
         .nvidia-update-log-modal .DialogContent_InnerWidth { width: 100%; max-width: none; }
       `}</style>
-      <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.8 }}>
-        {t("log_scroll_hint")} · {t(following ? "log_following" : "log_paused")}
+      <div
+        role="status"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          marginBottom: 12,
+          padding: "10px 14px",
+          background: browsing ? "rgba(26,159,255,.14)" : "rgba(118,185,0,.14)",
+          borderLeft: `3px solid ${browsing ? "#1a9fff" : "#76b900"}`,
+          fontSize: 13,
+        }}
+      >
+        <div>
+          <strong style={{ color: browsing ? "#6dc2ff" : "#a4d858" }}>
+            {t(browsing ? "log_history_mode" : "log_live_mode")}
+          </strong>
+          <div style={{ marginTop: 3, opacity: 0.85 }}>
+            {t(browsing ? "log_history_hint" : "log_live_hint")}
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flexShrink: 0,
+          }}
+        >
+          <ControllerGlyph click />
+          <span>
+            {t(browsing ? "log_follow_latest" : "log_browse_history")}
+          </span>
+        </div>
       </div>
       {error && (
         <div role="status" style={{ color: "#ffcf5c", marginBottom: 8 }}>
           {t("log_unavailable")}
         </div>
       )}
-      <LogScrollPanel
+      <Focusable
         ref={viewport}
         data-nvidia-update-log="true"
         role="region"
         aria-label={t("log_title")}
         tabIndex={0}
-        onActivate={() => {}}
-        actionDescriptionMap={{ [GamepadButton.RSTICK_TOUCH]: scrollHint }}
+        data-log-mode={browsing ? "history" : "live"}
+        onActivate={toggleMode}
+        onClick={toggleMode}
+        onOKActionDescription={t(
+          browsing ? "log_follow_latest" : "log_browse_history",
+        )}
+        onGamepadFocus={() => setFocused(true)}
+        onGamepadBlur={() => setFocused(false)}
+        actionDescriptionMap={{
+          [GamepadButton.LSTICK_CLICK]: stickHint(
+            t(browsing ? "log_follow_latest" : "log_browse_history"),
+          ),
+          [GamepadButton.RSTICK_TOUCH]: browsing
+            ? stickHint("Scroll")
+            : undefined,
+        }}
         onScroll={(event) => {
           const element = event.currentTarget;
-          setFollowing(
-            element.scrollHeight - element.clientHeight - element.scrollTop <
-              24,
-          );
+          if (!browsing) element.scrollTop = element.scrollHeight;
+        }}
+        onWheel={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          move(event.deltaY);
         }}
         onKeyDown={(event) => {
           const height = event.currentTarget.clientHeight;
@@ -112,22 +217,25 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
             PageDown: height * 0.8,
             Home: -event.currentTarget.scrollHeight,
           };
-          if (event.key === "End") latest();
+          if (event.key === "End") setBrowsing(false);
           else if (event.key in distances) move(distances[event.key]);
           else return;
           event.preventDefault();
           event.stopPropagation();
         }}
         onGamepadDirection={(event) => {
-          if (event.detail.button === GamepadButton.DIR_UP) move(-64);
-          else if (event.detail.button === GamepadButton.DIR_DOWN) move(64);
-          else return;
+          if (!browsing) return;
+          if (
+            event.detail.button !== GamepadButton.DIR_UP &&
+            event.detail.button !== GamepadButton.DIR_DOWN
+          )
+            return;
           event.preventDefault();
           event.stopPropagation();
         }}
         style={{
           height: "min(50vh, 480px)",
-          overflowY: "auto",
+          overflowY: "hidden",
           overscrollBehavior: "contain",
           padding: "12px 16px",
           background: "rgba(0, 0, 0, 0.35)",
@@ -145,7 +253,7 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
             ? log.lines.join("\n")
             : t("log_empty")
           : t("log_loading")}
-      </LogScrollPanel>
+      </Focusable>
       {log?.truncated && (
         <div style={{ fontSize: 11, marginTop: 8 }}>
           {t("log_truncated", { count: log.lines.length })}

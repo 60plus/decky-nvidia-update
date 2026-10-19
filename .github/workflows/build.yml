@@ -54,6 +54,7 @@ jobs:
                   node tests/plugin_updates.cjs
                   node tests/driver_operation.cjs
                   node tests/scroll_hint.cjs
+                  node tests/controller_scroll.cjs
                   pnpm build
 
             - name: Create plugin zip

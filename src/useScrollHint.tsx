@@ -13,10 +13,12 @@ const nativeButtons = findModuleExport(
     typeof value === "object" &&
     "A" in value &&
     "RightStick" in value &&
-    "RightStickClick" in value,
+    "LeftStickClick" in value,
 );
 
-export const scrollHint = <span data-nvidia-scroll-hint>Scroll</span>;
+export const stickHint = (label: string) => (
+  <span data-nvidia-scroll-hint>{label}</span>
+);
 
 // Like FileExplorer, keep Steam's native footer and controller glyph renderer.
 // Its generic action converter maps unsupported stick actions to A. Correct
@@ -60,11 +62,23 @@ export function useScrollHint() {
         original.call(store, map);
         return;
       }
-      original.call(store, {
+      const fixed = {
         ...map,
         [nativeButtons.A]: active[1],
-        [nativeButtons.RightStick]: hint,
-      });
+      };
+      for (const [button, native] of [
+        [15, nativeButtons.LeftStickClick],
+        [18, nativeButtons.RightStick],
+      ]) {
+        const action = active[button];
+        if (
+          (action?.label?.props || action?.props)?.[
+            "data-nvidia-scroll-hint"
+          ] !== undefined
+        )
+          fixed[native] = action;
+      }
+      original.call(store, fixed);
     };
     Object.defineProperty(store, "SetActionsFromMap", {
       configurable: true,
