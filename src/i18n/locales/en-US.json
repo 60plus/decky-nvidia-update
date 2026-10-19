@@ -1,5 +1,11 @@
 {
   "panel": {
+    "status_unavailable": "Checking the driver operation status. Actions will be available when the connection is restored.",
+    "reconnect_status": "Reconnect",
+    "operation_request_failed": "Could not start the operation",
+    "operation_status_unknown": "Operation status unavailable",
+    "rollback_restart_body": "Restart to return to the previous system.",
+    "no_restart_pending": "No restart is currently pending. The current driver is shown above.",
     "title": "NVIDIA Driver Update",
     "open_settings": "Settings",
     "installed": "Current system: {{version}}",

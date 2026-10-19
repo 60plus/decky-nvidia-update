@@ -112,6 +112,7 @@ DEFAULT_STATE: Dict[str, Any] = {
     # fallback either way.
     "error_code": None,
     "driver_spec": None,
+    "pending_reboot": False,
 }
 
 # Marker die() prefixes the script's own message with on specific, known
@@ -349,6 +350,13 @@ class Plugin(StandaloneMixin, PluginUpdaterMixin, WhatsNewSeenMixin, OtherPlugin
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     async def _unload(self) -> None:
+        # Only detach the observer. systemd continues to own the update job.
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
         decky.logger.info("decky-nvidia-update unloaded")
 
     async def _migration(self) -> None:

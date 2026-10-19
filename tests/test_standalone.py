@@ -45,6 +45,28 @@ URLS = ' '.join(f'https://archive.archlinux.org/packages/{p[0]}/{p}/{p}-{VERSION
                 for p in ('nvidia-utils', 'nvidia-open-dkms', 'lib32-nvidia-utils'))
 
 
+class TransactionStatus(unittest.TestCase):
+    def test_restart_depends_on_the_current_boot_selection(self):
+        cases = [
+            ('ready', 'A', 'B', True),
+            ('ready', 'B', 'B', False),
+            ('ready', 'A', 'A', False),
+            ('rollback-selected', 'B', 'A', True),
+            ('rollback-selected', 'A', 'A', False),
+            ('rollback-selected', 'B', 'B', False),
+            ('failed', 'A', 'B', False),
+        ]
+        for status, active, selected, pending in cases:
+            with self.subTest(status=status, active=active, selected=selected), patch.object(d, 'read_state', return_value=dict(status=status, source='A', target='B')), patch.object(d, 'run', side_effect=[active, selected]):
+                result = d.transaction_status()
+            self.assertEqual(result['pending_reboot'], pending)
+            self.assertEqual(result['selected_slot'], selected)
+
+    def test_incomplete_transaction_never_requests_a_reboot(self):
+        with patch.object(d, 'read_state', return_value=dict(status='ready')), patch.object(d, 'run', side_effect=['A', 'B']):
+            self.assertFalse(d.transaction_status()['pending_reboot'])
+
+
 class RootDevice(unittest.TestCase):
     FSID = '7c1d2c2b-46d3-41e7-b7ad-e58ecc100598'
 

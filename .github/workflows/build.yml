@@ -51,6 +51,7 @@ jobs:
                   node tests/driver_dropdown.cjs
                   node tests/dropdown_geometry.cjs
                   node tests/plugin_updates.cjs
+                  node tests/driver_operation.cjs
                   pnpm build
 
             - name: Create plugin zip

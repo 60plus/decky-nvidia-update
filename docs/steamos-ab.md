@@ -160,6 +160,23 @@ unchanged and publish a newer stable version with the workflow's asset name
 prereleases remain available in the manual release picker. Earlier standalone
 development builds with self-updates disabled need a manual update first.
 
+## Operation status and recovery
+
+The panel restores a pending installation or rollback after Decky reloads. A
+restart is offered only when the saved transaction's destination is still
+selected for boot and differs from the running system. Returning to the already
+running system cancels the prepared selection without asking for another reboot.
+
+Progress describes the whole transaction. A custom build or payload worker
+finishing its own steps cannot report 100% before the inactive slot is written
+and validated. Completion requires a matching operation receipt after the service
+stops. The percentage represents stages, not elapsed time or a time estimate.
+
+Start failures, an already running operation and an unavailable status connection
+have distinct messages. The panel reconnects to status without resubmitting an
+installation. Closing Decky detaches its observer; the systemd service continues.
+If status cannot be read, update actions remain unavailable until it is restored.
+
 ## CLI
 
 ```bash
@@ -236,6 +253,7 @@ pnpm exec tsc --noEmit
 node tests/driver_dropdown.cjs
 node tests/dropdown_geometry.cjs
 node tests/plugin_updates.cjs
+node tests/driver_operation.cjs
 bash package.sh
 ```
 
