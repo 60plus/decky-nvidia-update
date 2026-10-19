@@ -47,15 +47,25 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('--pipe', args)
             self.assertTrue(any(a.startswith('--property=StandardOutput=append:') for a in args))
             self.assertEqual(args[-2:], ('install', '610.57.04-1'))
+            self.assertIn('[driver] 610.57.04-1', m.LOG.read_text())
 
     async def test_failure_does_not_reuse_old_ready_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / 'run.log'
             log.write_text('[fail] Not enough space\n')
+            self.adapter._state['driver_spec'] = '610.57.04'
             with patch.object(m, 'LOG', log), patch.object(m, 'active', new_callable=AsyncMock, return_value=False), patch.object(m, 'controller', new_callable=AsyncMock, return_value={'status': 'ready', 'version': 'old'}):
                 await self.adapter._monitor_standalone()
                 self.assertFalse(self.adapter._state['success'])
                 self.assertEqual(self.adapter._state['error'], 'Not enough space')
+                self.assertEqual(self.adapter._state['driver_spec'], '610.57.04')
+
+    async def test_reload_keeps_the_requested_version_for_the_running_job(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LOG', Path(tmp) / 'run.log'), patch.object(m, 'active', AsyncMock(return_value=True)), patch.object(self.adapter, '_monitor_standalone', AsyncMock()):
+            m.LOG.write_text('[action] install\n[operation] active-job\n[driver] 610.57.04\n')
+            await self.adapter._main()
+            await self.adapter._task
+        self.assertEqual(self.adapter._state['driver_spec'], '610.57.04')
 
     async def test_custom_selection_stays_in_one_durable_service(self):
         with patch.object(self.adapter, '_start_standalone', new_callable=AsyncMock, return_value=m.launch_result(started=True)) as start:
@@ -163,6 +173,16 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
 
 
 class Progress(unittest.TestCase):
+    def test_filesystem_read_error_is_not_hidden_by_the_worker_exit_code(self):
+        for reason in ('Bad message (74)', 'Input/output error (5)'):
+            error = 'rsync: [sender] readdir("/etc/NetworkManager/conf.d"): ' + reason
+            result = m.operation_error([error, '[fail] Worker returned non-zero exit status 23.'])
+            self.assertIn('unreadable files', result)
+            self.assertIn(error, result)
+
+    def test_unrelated_rsync_error_keeps_the_recorded_failure(self):
+        self.assertEqual(m.operation_error(['rsync: [sender] opendir("/etc/private"): Permission denied (13)', '[fail] Copy failed']), 'Copy failed')
+
     def test_nested_build_completion_never_finishes_the_whole_operation(self):
         state = dict(step=0)
         phases = ['custom', 'clone', 'payload', 'write', 'finalize', 'verify']

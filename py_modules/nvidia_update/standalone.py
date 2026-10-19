@@ -31,6 +31,16 @@ def launch_result(started=False, code=None, message=None):
     return dict(started=started, code=code, message=message)
 
 
+def operation_error(lines):
+    for line in reversed(lines):
+        if (line.startswith('rsync: [sender] ') and
+                re.search(r': (?:Bad message \(74\)|Input/output error \(5\))$', line)):
+            return ('The current system contains unreadable files. The driver preparation stopped. '
+                    'Check and repair the affected filesystem before retrying. ' + line)
+    failures = [line[7:] for line in lines if line.startswith('[fail] ')]
+    return failures[-1] if failures else 'Preparation did not complete; inspect the log.'
+
+
 async def command(*args):
     # Avoid Decky's library path for all host utilities.
     import os
@@ -104,7 +114,8 @@ class StandaloneMixin:
             operation = uuid.uuid4().hex
             try:
                 LOG.parent.mkdir(parents=True, exist_ok=True)
-                LOG.write_text('[action] ' + action + '\n[operation] ' + operation + '\n')
+                LOG.write_text('[action] ' + action + '\n[operation] ' + operation + '\n' +
+                               ('[driver] ' + version + '\n' if version else ''))
             except OSError as error:
                 return launch_result(code='launch_failed', message='Could not create the operation log: ' + str(error))
             args = ['/usr/bin/python3', '-I', '-u', str(CONTROLLER), '--operation-id', operation, action]
@@ -152,10 +163,10 @@ class StandaloneMixin:
                           bool(self._state.get('operation_id')))
                     self._state.update(done=True, success=ok,
                                        pending_reboot=bool(transaction.get('pending_reboot')) if ok else False,
-                                       driver_spec=transaction.get('version', self._state.get('driver_spec')),
-                                       error=None if ok else (failures[-1] if failures else 'Preparation did not complete; inspect the log.'))
+                                       error=None if ok else operation_error(lines))
                     if ok:
-                        self._state.update(step=8, total_steps=8)
+                        self._state.update(step=8, total_steps=8,
+                                           driver_spec=transaction.get('version', self._state.get('driver_spec')))
                 await decky.emit('nvidia_update_progress', dict(self._state))
                 if not running:
                     break
@@ -179,6 +190,7 @@ class StandaloneMixin:
             self._state['action'] = action
             lines = LOG.read_text(errors='replace').splitlines() if LOG.exists() else []
             self._state['operation_id'] = next((line.removeprefix('[operation] ') for line in lines if line.startswith('[operation] ')), None)
+            self._state['driver_spec'] = next((line.removeprefix('[driver] ') for line in lines if line.startswith('[driver] ')), None)
             self._task = asyncio.create_task(self._monitor_standalone(action))
         else:
             transaction = await self.get_transaction_status()
