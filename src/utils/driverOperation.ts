@@ -5,6 +5,7 @@ export type LaunchResult = {
 };
 
 export function launchErrorTitle(code: string | null): string {
+  if (code === "already_installed") return "install_button_installed";
   if (code === "already_running") return "toast_already_running_title";
   if (code === "connection_lost" || code === "status_unavailable")
     return "operation_status_unknown";

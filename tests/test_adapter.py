@@ -27,6 +27,7 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
         self.adapter._lock = asyncio.Lock()
         self.adapter._state = dict(running=False, driver_spec=None)
         self.adapter.check_plugin_update_on_load = AsyncMock(return_value=None)
+        self.adapter.get_current_version = AsyncMock(return_value='')
         # These are isolated adapter tests, including startup cache migration.
         controller = patch.object(m, 'controller', new_callable=AsyncMock, return_value={})
         controller.start()
@@ -146,6 +147,31 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
         result = await self.adapter.request_update('../invalid')
         self.assertEqual(result['code'], 'invalid_version')
         self.assertFalse(result['started'])
+
+    async def test_same_version_leaves_previous_operation_and_log_untouched(self):
+        self.adapter.get_current_version.return_value = '615.78.08-1'
+        self.adapter._state.update(operation_id='previous-job', done=True, success=True)
+        previous = dict(self.adapter._state)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LOG', Path(tmp) / 'run.log'), patch.object(m, 'active', AsyncMock(return_value=False)), patch.object(m, 'command', AsyncMock()) as command:
+            m.LOG.write_text('Previous operation log\n')
+            for version, custom in [('615.78.08', False), ('615.78.08-1', False), ('615.78.08', True)]:
+                result = await self.adapter.request_update(version, custom=custom)
+                self.assertFalse(result['started'])
+                self.assertEqual(result['code'], 'already_installed')
+                self.assertIn('your system has not been changed', result['message'])
+                self.assertEqual(self.adapter._state, previous)
+                self.assertEqual(m.LOG.read_text(), 'Previous operation log\n')
+            self.assertFalse(await self.adapter.start_update('615.78.08'))
+            command.assert_not_called()
+
+    async def test_different_driver_or_package_revision_can_still_start(self):
+        self.adapter.get_current_version.return_value = '615.78.08-1'
+        for version in ['610.57.04', '615.78.08-2', 'latest']:
+            self.adapter._state['running'] = False
+            with tempfile.TemporaryDirectory() as tmp, patch.object(m, 'LOG', Path(tmp) / 'run.log'), patch.object(m, 'active', AsyncMock(return_value=False)), patch.object(m, 'command', AsyncMock(return_value=(0, '', ''))) as command, patch.object(self.adapter, '_monitor_standalone', AsyncMock()):
+                self.assertTrue((await self.adapter.request_update(version))['started'])
+                await self.adapter._task
+                self.assertEqual(command.call_args.args[-1], version)
 
     async def test_monitor_recovers_after_a_transient_status_error(self):
         self.adapter._state['operation_id'] = 'same-job'

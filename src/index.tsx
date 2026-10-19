@@ -879,6 +879,14 @@ function Content() {
           </ButtonItem>
         </PanelSectionRow>
 
+        {selectedIsInstalled && !status.running && !buildStatus.running && (
+          <PanelSectionRow>
+            <div style={{ fontSize: 12, color: "#b8bcbf" }}>
+              {t("already_installed_notice")}
+            </div>
+          </PanelSectionRow>
+        )}
+
         {(status.running || buildStatus.running) && (
           <PanelSectionRow>
             <SeparatedBlock bottomBorder={false}>

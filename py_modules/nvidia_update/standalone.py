@@ -111,6 +111,17 @@ class StandaloneMixin:
                 return launch_result(code='status_unavailable', message=str(error))
             if busy:
                 return launch_result(code='already_running', message='A driver operation is already running.')
+            if action in ('install', 'install-custom') and version != 'latest':
+                try:
+                    installed = await self.get_current_version()
+                except Exception as error:
+                    return launch_result(code='status_unavailable', message=str(error))
+                if installed and (version == installed or
+                                  ('-' not in version and version == installed.rsplit('-', 1)[0])):
+                    return launch_result(
+                        code='already_installed',
+                        message=f'NVIDIA {installed} is already installed. Reinstalling the same version is not supported. '
+                                'No update was started and your system has not been changed.')
             operation = uuid.uuid4().hex
             try:
                 LOG.parent.mkdir(parents=True, exist_ok=True)

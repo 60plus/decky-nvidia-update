@@ -10,6 +10,7 @@ vm.runInNewContext(compiled, {exports: exported, setTimeout, clearTimeout});
 
 (async () => {
   assert.equal(exported.launchErrorTitle('launch_failed'), 'operation_request_failed');
+  assert.equal(exported.launchErrorTitle('already_installed'), 'install_button_installed');
   assert.equal(exported.launchErrorTitle('already_running'), 'toast_already_running_title');
   assert.equal(exported.launchErrorTitle('status_unavailable'), 'operation_status_unknown');
   assert.equal(exported.launchErrorTitle('connection_lost'), 'operation_status_unknown');

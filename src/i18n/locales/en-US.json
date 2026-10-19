@@ -28,6 +28,7 @@
     "install_button": "Install driver\n{{version}}",
     "install_button_running": "Update running…",
     "install_button_installed": "Already installed",
+    "already_installed_notice": "This driver is already installed. Reinstalling the same version is not supported. No update will be started.",
     "step_label": "Step {{step}}/{{total}}",
     "step_1_desc": "Preflight checks",
     "step_2_desc": "Selecting driver version",
