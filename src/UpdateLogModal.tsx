@@ -198,9 +198,9 @@ export function UpdateLogModal({ closeModal }: { closeModal?: () => void }) {
           [GamepadButton.LSTICK_CLICK]: stickHint(
             t(browsing ? "log_follow_latest" : "log_browse_history"),
           ),
-          [GamepadButton.RSTICK_TOUCH]: browsing
-            ? stickHint("Scroll")
-            : undefined,
+          ...(browsing
+            ? { [GamepadButton.RSTICK_TOUCH]: stickHint("Scroll") }
+            : {}),
         }}
         onScroll={(event) => {
           const element = event.currentTarget;
