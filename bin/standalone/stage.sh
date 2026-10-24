@@ -7,6 +7,7 @@ WORK=${1:?private request directory required}
 phase=$(python3 -I "$HERE/phase.py" request "$WORK")
 eval "$phase"
 [[ -n ${SOURCE_DEV:-} && -n ${TARGET_DEV:-} ]] || die "Invalid staging request"
+[[ -f /etc/passwd && -e /etc/os-release ]] || die "Live /etc is incomplete; refusing configuration migration"
 [[ $(systemctl show rauc.service -p UnitFileState --value) != masked* ]] || die "RAUC is already masked"
 masked=0; loop=; watchdog=; migrating=0
 cleanup() {
@@ -38,18 +39,21 @@ truncate -s "$TARGET_BYTES" "$WORK/root.img"
 mkfs.btrfs -q -f -L "rootfs-$TARGET" "$WORK/root.img"
 loop=$(losetup --find --show "$WORK/root.img")
 mount -o ro "$SOURCE_DEV" "$WORK/source"
+python3 -I "$HERE/etc_config.py" check-legacy "$WORK/source/etc"
 mount -o compress-force=zstd:3 "$loop" "$WORK/root"
 echo '[phase] clone Preparing the system image on /home'
 rsync -aHAXx --numeric-ids "$WORK/source/" "$WORK/root/"
-# The build needs the actual pacman/mirror settings, not the unmerged /etc base.
-# Mirror deletions too, so removed base configuration cannot return on reboot.
-rsync -aHAXx --delete --numeric-ids /etc/ "$WORK/root/etc/"
+python3 -I "$HERE/etc_config.py" migrate-legacy /etc "$WORK/source/etc" "$WORK/root/etc" /var/lib/overlays/etc/upper
+# Keep user additions/edits in Valve's upper layer. Flattening the merged /etc
+# here makes --compare-dest drop them, so a later OS update loses them.
+# Reflect only deletions into this clone, including paths outside the keep list.
+python3 -I "$HERE/etc_config.py" prune-deleted /etc "$WORK/root/etc"
 require_space "$WORK/root" 256
 [[ $(blkid -s UUID -o value "$loop") != $(blkid -s UUID -o value "$SOURCE_DEV") ]] || die "Duplicate filesystem UUID"
 KERNEL=$(uname -r)
 # Arch installs have no pin file; the worker rejects an empty --pins value.
 echo '[phase] payload Preparing the driver in the system image'
-build_payload "$HERE/payload.sh" "$WORK/build" --target "$WORK/root" --kernel "$KERNEL" --driver "$DRIVER" ${PINS:+--pins "$PINS"} --force -y
+build_payload "$HERE/payload.sh" "$WORK/build" --target "$WORK/root" --build-etc /etc --kernel "$KERNEL" --driver "$DRIVER" ${PINS:+--pins "$PINS"} --force -y
 btrfs filesystem sync "$WORK/root"
 btrfs property set "$WORK/root" ro true
 umount "$WORK/root"
